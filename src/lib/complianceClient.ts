@@ -36,6 +36,34 @@ function isSuccessPayload(value: unknown): value is ComplianceSummaryResponse {
   );
 }
 
+function formatNonJsonHttpError(status: number): {
+  readonly errorType: "CONFIGURATION_ERROR" | "API_ERROR";
+  readonly message: string;
+} {
+  if (status === 503) {
+    return {
+      errorType: "CONFIGURATION_ERROR",
+      message: "Compliance summary service is unavailable or not configured on the server.",
+    };
+  }
+  if (status === 504) {
+    return {
+      errorType: "API_ERROR",
+      message: "Compliance summary request timed out. Please try again.",
+    };
+  }
+  if (status >= 500) {
+    return {
+      errorType: "API_ERROR",
+      message: `The compliance summary server encountered an unexpected error (HTTP ${status}). Your local sanitization results remain intact.`,
+    };
+  }
+  return {
+    errorType: "API_ERROR",
+    message: `Compliance summary API returned an unexpected non-JSON response (HTTP ${status}).`,
+  };
+}
+
 /**
  * Sends strictly allowlisted aggregate compliance metadata to `/api/summary`.
  * Rejects invalid payloads locally before making any network request.
@@ -71,14 +99,37 @@ export async function requestComplianceSummary(
     };
   }
 
-  let parsed: unknown;
+  let rawResponseText: string;
   try {
-    parsed = await response.json();
+    rawResponseText = await response.text();
   } catch {
+    const fallback = formatNonJsonHttpError(response.status);
     return {
       ok: false,
-      errorType: response.status === 503 ? "CONFIGURATION_ERROR" : "API_ERROR",
-      message: `Compliance summary API returned an invalid response (HTTP ${response.status}).`,
+      errorType: fallback.errorType,
+      message: response.ok
+        ? "Compliance summary API returned an unreadable response."
+        : fallback.message,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawResponseText);
+  } catch {
+    if (!response.ok) {
+      const fallback = formatNonJsonHttpError(response.status);
+      return {
+        ok: false,
+        errorType: fallback.errorType,
+        message: fallback.message,
+      };
+    }
+
+    return {
+      ok: false,
+      errorType: "API_ERROR",
+      message: "Compliance summary API returned an invalid response format.",
     };
   }
 

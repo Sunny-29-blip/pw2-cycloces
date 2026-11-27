@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildCompliancePrompt, handleSummaryRequest } from "../api/summary";
+import { buildCompliancePrompt, DEFAULT_GEMINI_MODEL, handleSummaryRequest } from "../api/summary";
+import { requestComplianceSummary } from "../src/lib/complianceClient";
 import {
   buildComplianceRequestPayload,
   validateComplianceRequest,
@@ -43,19 +44,34 @@ function createJsonRequest(
 }
 
 describe("compliance validation and /api/summary", () => {
-  it("accepts valid metadata requests and returns Gemini summary using configured model", async () => {
+  it("uses gemini-3.5-flash-lite by default and allows GEMINI_MODEL override", async () => {
     const generateSpy = vi.fn(async () => "Informational summary based on aggregate counts.");
-    const response = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
-      env: { GEMINI_API_KEY: "fake-test-key", GEMINI_MODEL: "gemini-2.5-flash" },
+
+    const defaultRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
+      env: { GEMINI_API_KEY: "fake-test-key" },
       createGenerator: () => ({ generate: generateSpy }),
     });
 
-    expect(response.status).toBe(200);
-    const json = (await response.json()) as { summary: string; model: string; disclaimer: string };
-    expect(json.summary).toBe("Informational summary based on aggregate counts.");
-    expect(json.model).toBe("gemini-2.5-flash");
-    expect(json.disclaimer).toContain("not a legal compliance certification");
-    expect(generateSpy).toHaveBeenCalledTimes(1);
+    expect(DEFAULT_GEMINI_MODEL).toBe("gemini-3.5-flash-lite");
+    expect(defaultRes.status).toBe(200);
+    const defaultJson = (await defaultRes.json()) as {
+      summary: string;
+      model: string;
+      disclaimer: string;
+    };
+    expect(defaultJson.summary).toBe("Informational summary based on aggregate counts.");
+    expect(defaultJson.model).toBe("gemini-3.5-flash-lite");
+    expect(defaultJson.disclaimer).toContain("not a legal compliance certification");
+
+    const overrideRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
+      env: { GEMINI_API_KEY: "fake-test-key", GEMINI_MODEL: "gemini-3.5-flash" },
+      createGenerator: () => ({ generate: generateSpy }),
+    });
+
+    expect(overrideRes.status).toBe(200);
+    const overrideJson = (await overrideRes.json()) as { model: string };
+    expect(overrideJson.model).toBe("gemini-3.5-flash");
+    expect(generateSpy).toHaveBeenCalledTimes(2);
 
     const promptText = buildCompliancePrompt(VALID_BODY);
     expect(promptText).toContain("EMAIL: 4");
@@ -110,6 +126,24 @@ describe("compliance validation and /api/summary", () => {
     });
     expect(tooLargeRes.status).toBe(413);
 
+    const chunkedStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("x".repeat(600)));
+        controller.enqueue(new TextEncoder().encode("y".repeat(600)));
+        controller.close();
+      },
+    });
+    const chunkedTooLargeRes = await handleSummaryRequest(
+      new Request("https://cyloces.example/api/summary", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: chunkedStream,
+        duplex: "half",
+      } as RequestInit),
+      { env: { GEMINI_API_KEY: "fake-test-key" } },
+    );
+    expect(chunkedTooLargeRes.status).toBe(413);
+
     const getRes = await handleSummaryRequest(
       new Request("https://cyloces.example/api/summary", { method: "GET" }),
       { env: { GEMINI_API_KEY: "fake-test-key" } },
@@ -134,13 +168,23 @@ describe("compliance validation and /api/summary", () => {
     expect(corsRes.headers.get("access-control-allow-origin")).toBeNull();
   });
 
-  it("returns 503 when GEMINI_API_KEY is missing and 502 when Gemini fails", async () => {
+  it("handles missing API key (503), SDK init failure (502), API failure (502), and timeout (504)", async () => {
     const missingKeyRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
       env: {},
     });
     expect(missingKeyRes.status).toBe(503);
 
-    const failedRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
+    const sdkInitFailedRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
+      env: { GEMINI_API_KEY: "fake-test-key" },
+      createGenerator: () => {
+        throw new Error("SDK constructor failure");
+      },
+    });
+    expect(sdkInitFailedRes.status).toBe(502);
+    const sdkJson = (await sdkInitFailedRes.json()) as { code: string };
+    expect(sdkJson.code).toBe("API_ERROR");
+
+    const apiFailedRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
       env: { GEMINI_API_KEY: "fake-test-key" },
       createGenerator: () => ({
         generate: async () => {
@@ -148,7 +192,103 @@ describe("compliance validation and /api/summary", () => {
         },
       }),
     });
-    expect(failedRes.status).toBe(502);
+    expect(apiFailedRes.status).toBe(502);
+
+    const emptyRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
+      env: { GEMINI_API_KEY: "fake-test-key" },
+      createGenerator: () => ({
+        generate: async () => "   ",
+      }),
+    });
+    expect(emptyRes.status).toBe(502);
+
+    const timeoutRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
+      env: { GEMINI_API_KEY: "fake-test-key" },
+      timeoutMs: 10,
+      createGenerator: () => ({
+        generate: ({ abortSignal }) =>
+          new Promise<string>((_, reject) => {
+            abortSignal.addEventListener("abort", () => {
+              reject(new Error("Aborted"));
+            });
+          }),
+      }),
+    });
+    expect(timeoutRes.status).toBe(504);
+  });
+
+  it("catches unexpected internal handler exceptions and returns structured JSON 500", async () => {
+    const brokenRequest = {
+      method: "POST",
+      headers: {
+        get() {
+          throw new Error("Unexpected internal header failure");
+        },
+      },
+    } as unknown as Request;
+
+    const response = await handleSummaryRequest(brokenRequest);
+    expect(response.status).toBe(500);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    const json = (await response.json()) as { error: string; code: string };
+    expect(json.code).toBe("INTERNAL_ERROR");
+    expect(json.error).toBe("An unexpected internal server error occurred.");
+  });
+
+  it("handles malformed and non-JSON server responses cleanly in requestComplianceSummary", async () => {
+    const html500Fetch = vi.fn(
+      async () =>
+        new Response("<html><body>Internal traceback details</body></html>", {
+          status: 500,
+          headers: { "Content-Type": "text/html" },
+        }),
+    );
+
+    const htmlOutcome = await requestComplianceSummary(
+      VALID_BODY,
+      html500Fetch as unknown as typeof fetch,
+    );
+    expect(htmlOutcome.ok).toBe(false);
+    if (!htmlOutcome.ok) {
+      expect(htmlOutcome.errorType).toBe("API_ERROR");
+      expect(htmlOutcome.message).toContain("HTTP 500");
+      expect(htmlOutcome.message).not.toContain("traceback");
+      expect(htmlOutcome.message).not.toContain("<html>");
+    }
+
+    const malformed200Fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ unexpected: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const malformedOutcome = await requestComplianceSummary(
+      VALID_BODY,
+      malformed200Fetch as unknown as typeof fetch,
+    );
+    expect(malformedOutcome).toEqual({
+      ok: false,
+      errorType: "API_ERROR",
+      message: "Compliance summary response was missing expected fields.",
+    });
+
+    const invalidJson200Fetch = vi.fn(
+      async () =>
+        new Response("not-json", {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        }),
+    );
+    const invalidJsonOutcome = await requestComplianceSummary(
+      VALID_BODY,
+      invalidJson200Fetch as unknown as typeof fetch,
+    );
+    expect(invalidJsonOutcome).toEqual({
+      ok: false,
+      errorType: "API_ERROR",
+      message: "Compliance summary API returned an invalid response format.",
+    });
   });
 
   it("builds client metadata payload without raw PII or text", () => {

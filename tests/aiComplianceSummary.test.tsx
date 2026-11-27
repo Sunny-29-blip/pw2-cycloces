@@ -42,7 +42,7 @@ describe("AiComplianceSummary component", () => {
         new Response(
           JSON.stringify({
             summary: "Detected financial and contact entities with moderate unredacted exposure.",
-            model: "gemini-2.5-flash",
+            model: "gemini-3.5-flash-lite",
             disclaimer: "Informational only.",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -89,10 +89,16 @@ describe("AiComplianceSummary component", () => {
       )
       .mockRejectedValueOnce(new Error("Offline"))
       .mockResolvedValueOnce(
+        new Response("<html><body>500 Server Error</body></html>", {
+          status: 500,
+          headers: { "Content-Type": "text/html" },
+        }),
+      )
+      .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             summary: "Recovered summary after retry.",
-            model: "gemini-2.5-flash",
+            model: "gemini-3.5-flash-lite",
             disclaimer: "Informational only.",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -113,6 +119,11 @@ describe("AiComplianceSummary component", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Network Error")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    const apiErrorAlert = await screen.findByRole("alert");
+    expect(apiErrorAlert).toHaveTextContent("HTTP 500");
+    expect(apiErrorAlert).not.toHaveTextContent("<html>");
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Recovered summary after retry.")).toBeInTheDocument();

@@ -182,10 +182,10 @@ All Vitest unit and component suites run non-watch in `jsdom` using synthetic fi
 
 Configure only in server-side Vercel Environment Variables (never prefix with `VITE_`):
 
-| Variable         | Required                       | Default            | Description                                                            |
-| ---------------- | ------------------------------ | ------------------ | ---------------------------------------------------------------------- |
-| `GEMINI_API_KEY` | Optional (for AI summary only) | —                  | Server-side Google Gemini API key used exclusively in `api/summary.ts` |
-| `GEMINI_MODEL`   | No                             | `gemini-2.5-flash` | Configurable Gemini model identifier                                   |
+| Variable         | Required                       | Default                 | Description                                                            |
+| ---------------- | ------------------------------ | ----------------------- | ---------------------------------------------------------------------- |
+| `GEMINI_API_KEY` | Optional (for AI summary only) | —                       | Server-side Google Gemini API key used exclusively in `api/summary.ts` |
+| `GEMINI_MODEL`   | No                             | `gemini-3.5-flash-lite` | Configurable Gemini model identifier                                   |
 
 ---
 

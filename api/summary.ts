@@ -9,7 +9,7 @@ import type {
   ComplianceSummaryResponse,
 } from "../src/types/compliance";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const SUMMARY_TIMEOUT_MS = 12_000;
 export const SUMMARY_DISCLAIMER =
   "Informational summary generated solely from aggregate entity counts and the privacy risk score. It is not a legal compliance certification or guarantee of anonymity.";
@@ -154,13 +154,9 @@ function createSdkGenerator(apiKey: string): SummaryGenerator {
   };
 }
 
-/**
- * Handles POST `/api/summary` requests with strict allowlist validation,
- * size caps, same-origin enforcement, and server-only Gemini invocation.
- */
-export async function handleSummaryRequest(
+async function executeSummaryRequest(
   request: Request,
-  options: SummaryHandlerOptions = {},
+  options: SummaryHandlerOptions,
 ): Promise<Response> {
   if (request.method !== "POST") {
     return jsonResponse(
@@ -218,18 +214,19 @@ export async function handleSummaryRequest(
   }
 
   const model = env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
-  const generator = (options.createGenerator ?? createSdkGenerator)(apiKey);
   const timeoutMs = options.timeoutMs ?? SUMMARY_TIMEOUT_MS;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const summaryText = await generator.generate({
+    const generator = (options.createGenerator ?? createSdkGenerator)(apiKey);
+    const rawSummary = await generator.generate({
       model,
       prompt: buildCompliancePrompt(validation.data),
       systemInstruction: SYSTEM_INSTRUCTION,
       abortSignal: controller.signal,
     });
+    const summaryText = rawSummary.trim();
 
     if (summaryText.length === 0) {
       return jsonResponse(
@@ -252,6 +249,27 @@ export async function handleSummaryRequest(
     );
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Handles POST `/api/summary` requests with a top-level error boundary, strict allowlist
+ * validation, size caps, same-origin enforcement, and server-only Gemini invocation.
+ */
+export async function handleSummaryRequest(
+  request: Request,
+  options: SummaryHandlerOptions = {},
+): Promise<Response> {
+  try {
+    return await executeSummaryRequest(request, options);
+  } catch {
+    return jsonResponse(
+      {
+        error: "An unexpected internal server error occurred.",
+        code: "INTERNAL_ERROR",
+      },
+      500,
+    );
   }
 }
 

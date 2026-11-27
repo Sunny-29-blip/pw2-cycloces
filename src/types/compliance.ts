@@ -30,5 +30,6 @@ export interface ComplianceErrorResponse {
     | "UNSUPPORTED_MEDIA_TYPE"
     | "FORBIDDEN_ORIGIN"
     | "CONFIGURATION_ERROR"
-    | "API_ERROR";
+    | "API_ERROR"
+    | "INTERNAL_ERROR";
 }
