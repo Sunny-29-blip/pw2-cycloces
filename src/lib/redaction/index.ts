@@ -28,7 +28,7 @@ export function redactText(
 }
 
 export { applyFullMask, FULL_MASK_PLACEHOLDER } from "./fullMask";
-export { applyPartialMask } from "./partialMask";
+export { applyPartialMask, maskEntityValuePartially } from "./partialMask";
 export { applyPseudonymization, normalizeEntityValue } from "./pseudonymize";
 export { applyPositionReplacements, validateRedactionInputs } from "./shared";
 export type {

@@ -11,7 +11,6 @@ import { SideBySideWorkspace } from "./components/SideBySideWorkspace";
 import { usePiiDetectionWorker } from "./hooks/usePiiDetectionWorker";
 import { buildAuditReport, serializeAuditReportCsv, serializeAuditReportJson } from "./lib/audit";
 import { buildComplianceRequestPayload } from "./lib/complianceValidation";
-import { buildDocumentViewSegments } from "./lib/documentSegments";
 import {
   buildSanitizedDownloadMeta,
   readFileAsText,
@@ -123,18 +122,6 @@ export function App(): ReactElement {
     [detections, riskAssessment.score],
   );
 
-  const { originalSegments, sanitizedSegments } = useMemo(
-    () =>
-      buildDocumentViewSegments(
-        documentText,
-        detections,
-        redactionMode,
-        ignoredIds,
-        redactionResult,
-      ),
-    [documentText, detections, redactionMode, ignoredIds, redactionResult],
-  );
-
   const handleDownloadSanitized = useCallback(() => {
     const meta = buildSanitizedDownloadMeta(sourceFileName, sourceExtension, redactionMode);
     triggerBrowserDownload(redactionResult.sanitizedText, meta.filename, meta.mimeType);
@@ -194,9 +181,11 @@ export function App(): ReactElement {
         </div>
 
         <SideBySideWorkspace
-          hasText={documentText.length > 0}
-          originalSegments={originalSegments}
-          sanitizedSegments={sanitizedSegments}
+          documentText={documentText}
+          detections={detections}
+          redactionMode={redactionMode}
+          ignoredIds={ignoredIds}
+          redactionResult={redactionResult}
           selectedDetectionId={selectedDetectionId}
           onSelectDetection={setSelectedDetectionId}
           onToggleDetection={handleToggleDetection}

@@ -1,5 +1,7 @@
-import type { ReactElement } from "react";
+import { type ReactElement, useState } from "react";
 import type { Detection } from "../types/detection";
+
+export const INSPECTOR_PAGE_SIZE = 50;
 
 export interface DetectionInspectorProps {
   readonly detections: readonly Detection[];
@@ -11,7 +13,7 @@ export interface DetectionInspectorProps {
 
 /**
  * Explainability panel exposing entity type, confidence, severity, validation reasons,
- * and an explicit Keep/Redact control for the selected detection.
+ * and an explicit Keep/Redact control with 50-item pagination for high-density documents.
  */
 export function DetectionInspector({
   detections,
@@ -20,8 +22,38 @@ export function DetectionInspector({
   onSelectDetection,
   onToggleDetection,
 }: DetectionInspectorProps): ReactElement {
+  const [pageState, setPageState] = useState<{
+    readonly anchorSelectedId: string | null;
+    readonly page: number;
+  }>({
+    anchorSelectedId: null,
+    page: 0,
+  });
+
   const activeDetection =
     detections.find((item) => item.id === selectedDetectionId) ?? detections[0] ?? null;
+
+  const totalPages = Math.max(1, Math.ceil(detections.length / INSPECTOR_PAGE_SIZE));
+  const selectedIndex = activeDetection
+    ? detections.findIndex((item) => item.id === activeDetection.id)
+    : -1;
+
+  const derivedPage = selectedIndex >= 0 ? Math.floor(selectedIndex / INSPECTOR_PAGE_SIZE) : 0;
+  const activePage = Math.max(
+    0,
+    Math.min(
+      totalPages - 1,
+      pageState.anchorSelectedId === selectedDetectionId ? pageState.page : derivedPage,
+    ),
+  );
+
+  const pageStart = activePage * INSPECTOR_PAGE_SIZE;
+  const pageDetections = detections.slice(pageStart, pageStart + INSPECTOR_PAGE_SIZE);
+
+  const goToPage = (nextPage: number) => {
+    const clamped = Math.max(0, Math.min(totalPages - 1, nextPage));
+    setPageState({ anchorSelectedId: selectedDetectionId, page: clamped });
+  };
 
   return (
     <section
@@ -40,6 +72,30 @@ export function DetectionInspector({
             Select any entity below or in the document to review exact validation checks.
           </p>
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => goToPage(activePage - 1)}
+              disabled={activePage === 0}
+              className="rounded-md border border-[#d2d2d7] bg-[#f5f5f7] px-2.5 py-1 font-medium text-[#1d1d1f] hover:bg-[#e8e8ed] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#2d313a] dark:bg-[#1c1f26] dark:text-[#f5f5f7]"
+            >
+              Previous Page
+            </button>
+            <span className="text-[#515154] dark:text-[#a1a1aa]">
+              Page {activePage + 1} of {totalPages} ({detections.length.toLocaleString()} total)
+            </span>
+            <button
+              type="button"
+              onClick={() => goToPage(activePage + 1)}
+              disabled={activePage >= totalPages - 1}
+              className="rounded-md border border-[#d2d2d7] bg-[#f5f5f7] px-2.5 py-1 font-medium text-[#1d1d1f] hover:bg-[#e8e8ed] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#2d313a] dark:bg-[#1c1f26] dark:text-[#f5f5f7]"
+            >
+              Next Page
+            </button>
+          </div>
+        )}
       </div>
 
       {activeDetection === null ? (
@@ -49,7 +105,8 @@ export function DetectionInspector({
       ) : (
         <div className="mt-4 space-y-4">
           <ul className="flex flex-wrap gap-2" aria-label="Detected entities">
-            {detections.map((item, index) => {
+            {pageDetections.map((item, localIndex) => {
+              const globalIndex = pageStart + localIndex;
               const isSelected = item.id === activeDetection.id;
               const isKept = ignoredIds.has(item.id);
               return (
@@ -64,7 +121,7 @@ export function DetectionInspector({
                         : "border-[#d2d2d7] bg-[#f9f9fb] text-[#1d1d1f] hover:bg-[#ececf1] dark:border-[#2d313a] dark:bg-[#1c1f26] dark:text-[#f5f5f7] dark:hover:bg-[#262a33]"
                     }`}
                   >
-                    #{index + 1} {item.type} ({isKept ? "Kept" : "Redacted"})
+                    #{globalIndex + 1} {item.type} ({isKept ? "Kept" : "Redacted"})
                   </button>
                 </li>
               );

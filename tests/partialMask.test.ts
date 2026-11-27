@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDetectionId, detectPii } from "../src/lib/detectors";
-import { applyPartialMask } from "../src/lib/redaction";
+import { applyPartialMask, maskEntityValuePartially } from "../src/lib/redaction";
 import type { Detection } from "../src/types/detection";
 
 describe("applyPartialMask", () => {
@@ -104,5 +104,37 @@ describe("applyPartialMask", () => {
     );
     expect(result.redactedCount).toBe(2);
     expect(result.ignoredCount).toBe(1);
+  });
+
+  it("matches applyPartialMask output across all entity types and short edge cases", () => {
+    const samples: ReadonlyArray<{ type: Detection["type"]; value: string }> = [
+      { type: "EMAIL", value: "alice.sharma@company-domain.co.in" },
+      { type: "EMAIL", value: "a@x.co" },
+      { type: "PHONE", value: "+91 98765 43210" },
+      { type: "PHONE", value: "9876" },
+      { type: "CREDIT_CARD", value: "4532-0151-1283-0366" },
+      { type: "CREDIT_CARD", value: "1234" },
+      { type: "AADHAAR", value: "4991 1866 5240" },
+      { type: "AADHAAR", value: "1234" },
+      { type: "IPV4", value: "192.168.42.19" },
+      { type: "IPV4", value: "invalid" },
+      { type: "PAN", value: "ABCDE1234F" },
+      { type: "PAN", value: "ABC" },
+    ];
+
+    for (const sample of samples) {
+      const detection: Detection = {
+        id: createDetectionId(sample.type, 0, sample.value.length),
+        type: sample.type,
+        start: 0,
+        end: sample.value.length,
+        value: sample.value,
+        confidence: "high",
+        reasons: ["Equivalence fixture."],
+        severity: 2,
+      };
+      const expected = applyPartialMask(sample.value, [detection]).sanitizedText;
+      expect(maskEntityValuePartially(sample.type, sample.value)).toBe(expected);
+    }
   });
 });

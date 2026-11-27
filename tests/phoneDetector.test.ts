@@ -53,4 +53,12 @@ describe("detectPhones", () => {
     const text = "Card: 6070940000000009 Aadhaar: 987654321096 Spaced: 9876 5432 1096";
     expect(detectPhones(text)).toHaveLength(0);
   });
+
+  it("retains full international match when subscriber follows closing parenthesis", () => {
+    const text = "Global hotline: +1 (800) 987-654-3210";
+    const results = detectPhones(text);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.value).toBe("+1 (800) 987-654-3210");
+  });
 });

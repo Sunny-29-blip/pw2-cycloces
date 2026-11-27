@@ -93,6 +93,14 @@ const PARTIAL_MASK_FORMATTERS: Readonly<Record<EntityType, (value: string) => st
 };
 
 /**
+ * Applies partial masking to a single validated entity type and value without allocating
+ * temporary detection arrays or repeating full-document validation.
+ */
+export function maskEntityValuePartially(type: EntityType, value: string): string {
+  return PARTIAL_MASK_FORMATTERS[type](value);
+}
+
+/**
  * Applies entity-specific partial masking to non-ignored detections while preserving
  * surrounding text and preventing CSV delimiter injection inside replacement strings.
  */
@@ -106,7 +114,7 @@ export function applyPartialMask(
     text,
     validated.sortedDetections,
     validated.ignoredIds,
-    (detection) => PARTIAL_MASK_FORMATTERS[detection.type](detection.value),
+    (detection) => maskEntityValuePartially(detection.type, detection.value),
   );
 
   return {

@@ -1,5 +1,4 @@
-import { createDetectionId } from "./detectors";
-import { applyPartialMask, FULL_MASK_PLACEHOLDER } from "./redaction";
+import { FULL_MASK_PLACEHOLDER, maskEntityValuePartially } from "./redaction";
 import type { Detection } from "../types/detection";
 import type { RedactionMode, RedactionResult } from "../types/redaction";
 
@@ -27,6 +26,15 @@ export type SanitizedDocumentSegment =
       readonly text: string;
     };
 
+/**
+ * Character and detection window for paginated high-density rendering.
+ */
+export interface DocumentSegmentWindow {
+  readonly startOffset: number;
+  readonly endOffset: number;
+  readonly detections: readonly Detection[];
+}
+
 function resolveReplacementText(
   detection: Detection,
   mode: RedactionMode,
@@ -43,19 +51,45 @@ function resolveReplacementText(
     );
   }
 
-  const reanchored: Detection = {
-    ...detection,
-    id: createDetectionId(detection.type, 0, detection.value.length),
-    start: 0,
-    end: detection.value.length,
-  };
+  return maskEntityValuePartially(detection.type, detection.value);
+}
 
-  return applyPartialMask(detection.value, [reanchored]).sanitizedText;
+/**
+ * Computes the exact non-overlapping character slice and detection subset for a workspace page.
+ */
+export function computeDetectionPageWindow(
+  textLength: number,
+  detections: readonly Detection[],
+  pageIndex: number,
+  pageSize: number,
+): DocumentSegmentWindow {
+  if (detections.length === 0) {
+    return { startOffset: 0, endOffset: textLength, detections: [] };
+  }
+
+  const totalPages = Math.max(1, Math.ceil(detections.length / pageSize));
+  const safePage = Math.max(0, Math.min(totalPages - 1, pageIndex));
+  const startIndex = safePage * pageSize;
+  const endIndex = Math.min(detections.length, startIndex + pageSize);
+  const pageDetections = detections.slice(startIndex, endIndex);
+
+  const prevDetection = startIndex > 0 ? detections[startIndex - 1] : undefined;
+  const lastPageDetection = pageDetections[pageDetections.length - 1];
+
+  const startOffset = prevDetection ? prevDetection.end : 0;
+  const endOffset =
+    endIndex >= detections.length || !lastPageDetection ? textLength : lastPageDetection.end;
+
+  return {
+    startOffset,
+    endOffset,
+    detections: pageDetections,
+  };
 }
 
 /**
  * Builds aligned original and sanitized React-safe text segments from the current
- * document, detections, ignored IDs, and single-source-of-truth redaction result.
+ * document (or active page window), detections, ignored IDs, and redaction result.
  */
 export function buildDocumentViewSegments(
   text: string,
@@ -63,6 +97,7 @@ export function buildDocumentViewSegments(
   mode: RedactionMode,
   ignoredIds: ReadonlySet<string>,
   redactionResult: RedactionResult,
+  windowBounds?: DocumentSegmentWindow,
 ): {
   readonly originalSegments: readonly OriginalDocumentSegment[];
   readonly sanitizedSegments: readonly SanitizedDocumentSegment[];
@@ -71,18 +106,23 @@ export function buildDocumentViewSegments(
     return { originalSegments: [], sanitizedSegments: [] };
   }
 
-  if (detections.length === 0) {
+  const startOffset = windowBounds ? windowBounds.startOffset : 0;
+  const endOffset = windowBounds ? windowBounds.endOffset : text.length;
+  const scopedDetections = windowBounds ? windowBounds.detections : detections;
+
+  if (scopedDetections.length === 0) {
+    const slice = text.slice(startOffset, endOffset);
     return {
-      originalSegments: [{ kind: "text", key: "orig-plain", text }],
-      sanitizedSegments: [{ kind: "text", key: "san-plain", text }],
+      originalSegments: [{ kind: "text", key: `orig-plain-${startOffset}`, text: slice }],
+      sanitizedSegments: [{ kind: "text", key: `san-plain-${startOffset}`, text: slice }],
     };
   }
 
   const originalSegments: OriginalDocumentSegment[] = [];
   const sanitizedSegments: SanitizedDocumentSegment[] = [];
-  let cursor = 0;
+  let cursor = startOffset;
 
-  for (const detection of detections) {
+  for (const detection of scopedDetections) {
     if (detection.start > cursor) {
       const plainSlice = text.slice(cursor, detection.start);
       originalSegments.push({ kind: "text", key: `orig-txt-${cursor}`, text: plainSlice });
@@ -117,8 +157,8 @@ export function buildDocumentViewSegments(
     cursor = detection.end;
   }
 
-  if (cursor < text.length) {
-    const tail = text.slice(cursor);
+  if (cursor < endOffset) {
+    const tail = text.slice(cursor, endOffset);
     originalSegments.push({ kind: "text", key: `orig-txt-${cursor}`, text: tail });
     sanitizedSegments.push({ kind: "text", key: `san-txt-${cursor}`, text: tail });
   }

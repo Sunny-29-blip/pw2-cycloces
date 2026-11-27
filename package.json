@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "benchmark": "node scripts/benchmark.mjs"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
