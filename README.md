@@ -1,143 +1,98 @@
-# Local-First PII Sanitization Application
+# CYLOCES — Local-First PII Sanitizer
 
 > **Every redaction is explainable, reviewable, and never leaves your browser.**
 
-## 1. Project Overview
+## 1. Product Overview
 
-An explainable, auditable, local-first Personally Identifiable Information (PII) sanitization web application built with React, TypeScript, Vite, and Tailwind CSS.
+**CYLOCES** is an explainable, auditable, 100% client-side Personally Identifiable Information (PII) sanitization web application built with React, TypeScript, Vite, Tailwind CSS, and dedicated Web Workers.
 
-**Current Status:** **Prompt A — Project Foundation** is implemented. Core PII detection, explainability scoring, redaction modes, Web Workers, risk calculation, and optional AI features are **planned** for subsequent phases and are not yet implemented.
+**Current Status:** Prompts A–D are implemented:
 
----
+- **Prompt A:** Strict TypeScript, Vite, Tailwind CSS, Vitest, ESLint, Prettier, CI, and strict CSP static deployment configuration.
+- **Prompt B:** Deterministic PII detection and explainability engine (`EMAIL`, `PHONE`, `IPV4`, `PAN`, `AADHAAR`, `CREDIT_CARD`).
+- **Prompt C:** Deterministic redaction engine (`FULL`, `PARTIAL`, `PSEUDONYMIZE`) with CSV preservation and ignored-ID support.
+- **Prompt D:** Full interactive CYLOCES browser application with Web Worker detection, side-by-side live review, click-to-toggle overrides, explainability inspector, severity-weighted Privacy Risk Meter, `.txt`/`.csv` local file processing, and PII-free JSON/CSV audit exports.
 
-## 2. Problem Statement
-
-Teams, analysts, engineers, and everyday users frequently need to share logs, transcripts, customer support tickets, and structured datasets without exposing sensitive personal data. Existing tools often operate as opaque cloud black boxes—requiring users to upload sensitive text to remote servers without transparent evidence of what was detected, why it was flagged, or how it was transformed.
-
-This project solves that problem by providing a **100% browser-resident, explainable, and auditable sanitization workbench**.
-
----
-
-## 3. Core Objectives
-
-### Implemented (Prompt A)
-
-- Strict TypeScript, Vite, React, and Tailwind CSS project foundation.
-- Working Vitest unit test runner, ESLint, and Prettier code quality checks.
-- Static Vercel deployment configuration with strict Content Security Policy (CSP) HTTP headers.
-- Continuous Integration workflow via GitHub Actions.
-- Clear modular directory structure separating components, detectors, redaction, risk analysis, Web Workers, and shared types.
-
-### Planned (Prompts B–F)
-
-- **Prompt B (Detection & Explainability):** Client-side PII detection with validator-backed confidence and human-readable explanations.
-- **Prompt C (Redaction Engine):** Multiple reversible/irreversible redaction and pseudonymization modes.
-- **Prompt D (Frontend & Privacy Audit):** Apple-caliber interactive review workspace, file/CSV handling, Web Worker offloading, risk scoring, and client-side privacy audit verification.
-- **Prompt E (Optional Gemini Integration):** Strictly opt-in, user-controlled AI assistance with explicit disclosure.
-- **Prompt F (Hardening & Documentation):** Security hardening, performance verification, and final documentation.
+Optional AI-assisted review (Prompt E) and final hardening (Prompt F) remain planned.
 
 ---
 
-## 4. Technology Stack
+## 2. Architecture
 
-| Layer                      | Technology                             | Status      |
-| -------------------------- | -------------------------------------- | ----------- |
-| Build Tool                 | Vite                                   | Implemented |
-| UI Library                 | React + TypeScript (Strict Mode)       | Implemented |
-| Styling                    | Tailwind CSS                           | Implemented |
-| Testing                    | Vitest + Testing Library (`jsdom`)     | Implemented |
-| Linting & Formatting       | ESLint + Prettier                      | Implemented |
-| Hosting & Security Headers | Vercel Static Deployment + CSP Headers | Implemented |
-| CI Pipeline                | GitHub Actions                         | Implemented |
+CYLOCES separates pure domain engines, off-thread execution, and accessible React presentation:
+
+1. **Detection Layer (`src/lib/detectors/`):** Pure regex extraction paired with independent structural and checksum validation (Luhn, Verhoeff, PAN holder categories, RFC-lite email domains, IPv4 octet bounds, E.164/Indian phones) plus priority-ordered overlap resolution.
+2. **Redaction Layer (`src/lib/redaction/`):** Position-based text transformations operating strictly on validated `[start, end)` spans so CSV delimiters, quotes, escaped quotes, and newlines stay intact.
+3. **Web Worker Layer (`src/workers/` & `src/hooks/usePiiDetectionWorker.ts`):** Offloads `detectPii` off the main UI thread using typed request/response messages, stale-response filtering (`requestId`), and clean worker termination.
+4. **Risk & Audit Layer (`src/lib/risk/`, `src/lib/audit/`):** Calculates unredacted severity exposure and generates privacy-safe JSON and CSV audit exports.
+5. **Presentation Layer (`src/components/`, `src/App.tsx`):** Modular, WCAG AA accessible React UI with light/dark themes, keyboard navigation, and React text-node rendering (zero `dangerouslySetInnerHTML`).
 
 ---
 
-## 5. Planned Architecture
+## 3. Privacy-First Processing
 
-The application is structured around strict separation of concerns so that all core sanitization logic remains pure, testable, and decoupled from the React UI:
-
-1. **Detection Layer (`src/lib/detectors/` — Planned):** Pure TypeScript modules for locating candidate PII spans, validating checksums/formats, and emitting structured evidence explaining why each span matched.
-2. **Redaction Layer (`src/lib/redaction/` — Planned):** Deterministic transformation engines (masking, token replacement, pseudonymization) operating on verified detection spans.
-3. **Risk Layer (`src/lib/risk/` — Planned):** Transparent exposure and sensitivity scoring calculated from detected entities and document context.
-4. **Worker Layer (`src/workers/` — Planned):** Dedicated Web Workers to keep heavy scanning and batch processing off the main UI thread.
-5. **Presentation Layer (`src/components/` — Planned):** Accessible, keyboard-navigable React UI for inspecting flagged items, toggling decisions, and exporting sanitized outputs.
-6. **Type Contracts (`src/types/` — Planned):** Shared strict TypeScript domain models across workers, engines, and UI components.
+- **Browser-Only Execution:** All text scanning, redaction, risk scoring, file reading, and export generation execute exclusively inside browser memory.
+- **Zero Network Egress for Document Data:** No backend APIs, analytics, external font requests, or external AI calls exist.
+- **Strict Content Security Policy:** Production headers in [vercel.json](vercel.json) restrict `script-src`, `connect-src`, `font-src`, `form-action`, `object-src`, and `frame-ancestors`.
+- **No Persistent Document Storage:** Document contents and raw PII are never persisted to `localStorage` or `sessionStorage`.
 
 ---
 
-## 6. Privacy-First Approach
+## 4. Web Worker Architecture
 
-- **Zero Server Storage:** No backend database or server-side text processing endpoints exist.
-- **Strict Content Security Policy:** Production headers in `vercel.json` lock down `script-src`, `connect-src`, `font-src`, `form-action`, `object-src`, and `frame-ancestors` to prevent unauthorized network egress, third-party script injection, and framing.
-- **No External Fonts or Analytics:** Uses system font stacks only; zero telemetry or tracking scripts.
-- **Local-First Execution (Planned):** All parsing, detection, risk scoring, and redaction execute strictly inside the user's browser.
+- [piiWorker.ts](src/workers/piiWorker.ts) delegates typed `DetectionWorkerRequest` messages (`{ requestId, text }`) to [processDetectionRequest](src/workers/workerMessageHandler.ts) and posts `DetectionWorkerResponse` payloads back to the UI thread.
+- [workerClient.ts](src/workers/workerClient.ts) maintains a single persistent worker instance, tracks `latestRequestId`, discards stale responses if the user edits text mid-scan, surfaces safe error messages, and terminates on unmount.
 
 ---
 
-## 7. Project Structure
+## 5. Redaction Modes
+
+| Mode           | Behavior                                                      | Example                                                                                                                                                                                        |
+| -------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FULL`         | Replaces every non-ignored detection with `[REDACTED]`        | `sunny@example.com` -> `[REDACTED]`                                                                                                                                                            |
+| `PARTIAL`      | Masks sensitive portions while keeping limited structure      | `sunny@example.com` -> `s***@example.com`, `4111 1111 1111 1111` -> `XXXX-XXXX-XXXX-1111`, `2345 6789 0124` -> `XXXX XXXX 0124`, `192.168.1.10` -> `192.168.*.*`, `ABCPD1234F` -> `AB*******F` |
+| `PSEUDONYMIZE` | Assigns session-local normalized placeholders per entity type | `sunny@example.com` & `SUNNY@example.com` -> `EMAIL_01`                                                                                                                                        |
+
+---
+
+## 6. Explainable Detection System
+
+Every `Detection` carries `id`, `type`, `start`, `end`, `value`, `confidence` (`"high" | "medium" | "low"`), `severity` (`1–5`), and `reasons` reflecting the exact validation checks executed (e.g., `"Luhn checksum passed."`, `"Verhoeff checksum passed."`). Clicking or focusing any entity in the workspace or inspector displays these exact checks without invented explanations.
+
+---
+
+## 7. Risk Score Formula and Limitations
 
 ```text
-.
-├── .github/
-│   └── workflows/
-│       └── ci.yml          # CI pipeline (lint, typecheck, test, build)
-├── src/
-│   ├── components/         # UI components (planned in Prompt D)
-│   ├── lib/
-│   │   ├── detectors/      # PII detection & explainability (planned in Prompt B)
-│   │   ├── redaction/      # Redaction transformations (planned in Prompt C)
-│   │   └── risk/           # Risk scoring logic (planned in Prompt D)
-│   ├── types/              # Shared TypeScript interfaces (planned in Prompt B+)
-│   ├── workers/            # Web Workers for off-thread execution (planned in Prompt D)
-│   ├── App.tsx             # Root foundation shell (implemented)
-│   ├── index.css           # Tailwind CSS entry & base accessibility styles (implemented)
-│   └── main.tsx            # Application mount point (implemented)
-├── tests/                  # Vitest unit tests (minimal foundation test implemented)
-├── .env.example            # Environment variable documentation
-├── .gitignore              # Git ignore rules
-├── AGENTS.md               # Permanent engineering, UI, and testing standards
-├── PROMPT_LOG.md           # Chronological prompt & implementation log
-├── README.md               # Project documentation
-├── index.html              # HTML entry point
-├── package.json            # Dependencies and npm scripts
-├── tsconfig.json           # Root TypeScript configuration
-├── tsconfig.app.json       # Strict TypeScript config for application code
-├── tsconfig.node.json      # Strict TypeScript config for tooling
-├── vercel.json             # Vercel static build & strict CSP response headers
-└── vite.config.ts          # Vite & Vitest configuration
+Risk Score = round(100 * sum(severity of ignored detections) / sum(severity of all valid detections))
 ```
+
+- Returns `0` when there are no detections or all detections are redacted, and `100` when every detection is kept unchanged, clamped to `0–100`.
+- **Thresholds:** `0–25` (`Low Risk`), `26–65` (`Moderate Risk`), `66–100` (`High Risk`).
+- **Limitation:** The score measures detected identifiers left completely unchanged; it is not a guarantee of anonymity, and partial masking may still retain contextual clues.
 
 ---
 
-## 8. Installation and Local Development
+## 8. Audit Report Format
 
-### Prerequisites
+Audit reports are downloadable locally as JSON (`cyloces-audit-report.json`) or CSV (`cyloces-audit-report.csv`) and include **only**:
 
-- Node.js 20+ (tested with Node 24)
-- npm 10+
+- Selected redaction mode, generation timestamp, total detections, redacted count, and kept count.
+- Counts by entity type (`CREDIT_CARD`, `AADHAAR`, `PAN`, `IPV4`, `EMAIL`, `PHONE`).
+- Per-detection positional offsets (`start`, `end`), `type`, deterministic `id`, and `REDACTED` / `KEPT` status.
 
-### Setup
+Audit reports **never** include original document text, raw detected values, text snippets, pseudonym-to-original mappings, or filenames.
+
+---
+
+## 9. Installation and Usage
 
 ```bash
 npm install
+npm run dev
 ```
 
-### Available Scripts
-
-| Command             | Description                                          |
-| ------------------- | ---------------------------------------------------- |
-| `npm run dev`       | Start the local Vite development server              |
-| `npm run build`     | Build the production static bundle into `dist/`      |
-| `npm run preview`   | Preview the production build locally                 |
-| `npm run lint`      | Run ESLint across the repository                     |
-| `npm run typecheck` | Run TypeScript strict type checking (`tsc --noEmit`) |
-| `npm test`          | Run Vitest unit tests once in non-watch mode         |
-
----
-
-## 9. Testing Instructions
-
-Run the full verification suite locally:
+### Verification Commands
 
 ```bash
 npm run lint
@@ -146,35 +101,20 @@ npm test
 npm run build
 ```
 
-All tests in `tests/` execute via Vitest in `jsdom` without watch mode so `npm test` terminates cleanly in CI environments.
-
 ---
 
-## 10. Vercel Deployment Instructions
+## 10. Requirement-to-File Mapping
 
-1. Push the repository to GitHub.
-2. Import the repository into Vercel as a **Vite** static frontend project.
-3. Vercel uses `vercel.json` automatically:
-   - **Build Command:** `npm run build`
-   - **Output Directory:** `dist`
-   - **Security Headers:** Applies strict `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` HTTP headers to all routes.
-4. No environment variables are required for deployment.
-
----
-
-## 11. Requirement-to-File Mapping
-
-| Requirement                              | Status             | File(s)                                                                                                          |
-| ---------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| Build tooling & Tailwind CSS integration | Implemented        | [package.json](package.json), [vite.config.ts](vite.config.ts), [src/index.css](src/index.css)                   |
-| Strict TypeScript configuration          | Implemented        | [tsconfig.json](tsconfig.json), [tsconfig.app.json](tsconfig.app.json), [tsconfig.node.json](tsconfig.node.json) |
-| ESLint & Prettier configuration          | Implemented        | [eslint.config.js](eslint.config.js), [.prettierrc](.prettierrc)                                                 |
-| Minimal root application shell           | Implemented        | [index.html](index.html), [src/main.tsx](src/main.tsx), [src/App.tsx](src/App.tsx)                               |
-| Unit testing setup & baseline test       | Implemented        | [vite.config.ts](vite.config.ts), [tests/app.test.tsx](tests/app.test.tsx)                                       |
-| Production CSP & Vercel static config    | Implemented        | [vercel.json](vercel.json)                                                                                       |
-| Continuous Integration workflow          | Implemented        | [.github/workflows/ci.yml](.github/workflows/ci.yml)                                                             |
-| Engineering & UI standards               | Implemented        | [AGENTS.md](AGENTS.md)                                                                                           |
-| Development prompt log                   | Implemented        | [PROMPT_LOG.md](PROMPT_LOG.md)                                                                                   |
-| PII detectors & explainability           | Planned (Prompt B) | `src/lib/detectors/`, `src/types/`                                                                               |
-| Redaction & pseudonymization engine      | Planned (Prompt C) | `src/lib/redaction/`                                                                                             |
-| Risk calculation, Web Workers, & full UI | Planned (Prompt D) | `src/lib/risk/`, `src/workers/`, `src/components/`                                                               |
+| Requirement                                   | Status             | File(s)                                                                                                                                                                                      |
+| --------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project config, CSP headers, CI               | Implemented        | [package.json](package.json), [vercel.json](vercel.json), [.github/workflows/ci.yml](.github/workflows/ci.yml)                                                                               |
+| Detection data model & 6 detectors            | Implemented        | [src/types/detection.ts](src/types/detection.ts), [src/lib/detectors/](src/lib/detectors/index.ts)                                                                                           |
+| Luhn & Verhoeff checksums                     | Implemented        | [src/lib/detectors/luhn.ts](src/lib/detectors/luhn.ts), [src/lib/detectors/verhoeff.ts](src/lib/detectors/verhoeff.ts)                                                                       |
+| Full, partial, & pseudonym redaction          | Implemented        | [src/types/redaction.ts](src/types/redaction.ts), [src/lib/redaction/](src/lib/redaction/index.ts)                                                                                           |
+| Dedicated Web Worker & client hook            | Implemented        | [src/workers/piiWorker.ts](src/workers/piiWorker.ts), [src/workers/workerClient.ts](src/workers/workerClient.ts), [src/hooks/usePiiDetectionWorker.ts](src/hooks/usePiiDetectionWorker.ts)   |
+| Severity-weighted Privacy Risk Meter          | Implemented        | [src/lib/risk/riskCalculator.ts](src/lib/risk/riskCalculator.ts), [src/components/PrivacyRiskMeter.tsx](src/components/PrivacyRiskMeter.tsx)                                                 |
+| PII-free JSON & CSV audit exports             | Implemented        | [src/lib/audit/auditExport.ts](src/lib/audit/auditExport.ts), [src/components/AuditExportBar.tsx](src/components/AuditExportBar.tsx)                                                         |
+| Local `.txt`/`.csv` upload, download & sample | Implemented        | [src/lib/fileUtils.ts](src/lib/fileUtils.ts), [src/lib/sampleDocument.ts](src/lib/sampleDocument.ts), [src/components/InputPanel.tsx](src/components/InputPanel.tsx)                         |
+| Interactive review, toggles & inspector       | Implemented        | [src/App.tsx](src/App.tsx), [src/components/SideBySideWorkspace.tsx](src/components/SideBySideWorkspace.tsx), [src/components/DetectionInspector.tsx](src/components/DetectionInspector.tsx) |
+| Optional Gemini integration                   | Planned (Prompt E) | —                                                                                                                                                                                            |
+| Final hardening & documentation               | Planned (Prompt F) | —                                                                                                                                                                                            |
