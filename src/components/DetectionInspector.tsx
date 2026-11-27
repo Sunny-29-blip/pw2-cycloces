@@ -30,13 +30,14 @@ export function DetectionInspector({
     page: 0,
   });
 
-  const activeDetection =
-    detections.find((item) => item.id === selectedDetectionId) ?? detections[0] ?? null;
+  const matchedIndex =
+    selectedDetectionId !== null
+      ? detections.findIndex((item) => item.id === selectedDetectionId)
+      : -1;
+  const selectedIndex = matchedIndex >= 0 ? matchedIndex : detections.length > 0 ? 0 : -1;
+  const activeDetection = selectedIndex >= 0 ? (detections[selectedIndex] ?? null) : null;
 
   const totalPages = Math.max(1, Math.ceil(detections.length / INSPECTOR_PAGE_SIZE));
-  const selectedIndex = activeDetection
-    ? detections.findIndex((item) => item.id === activeDetection.id)
-    : -1;
 
   const derivedPage = selectedIndex >= 0 ? Math.floor(selectedIndex / INSPECTOR_PAGE_SIZE) : 0;
   const activePage = Math.max(

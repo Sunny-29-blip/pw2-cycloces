@@ -22,13 +22,45 @@ function createEmptyCountsByType(): Record<EntityType, number> {
   };
 }
 
+function extractDigitsFast(value: string): string {
+  let digits = "";
+  let allDigits = true;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 48 && code <= 57) {
+      if (!allDigits) {
+        digits += value.charAt(index);
+      }
+    } else if (allDigits) {
+      allDigits = false;
+      digits = value.slice(0, index);
+    }
+  }
+
+  return allDigits ? value : digits;
+}
+
 function normalizeIpv4(value: string): string {
   const trimmed = value.trim();
-  const octets = trimmed.split(".");
-  if (octets.length !== 4) {
+  const dot1 = trimmed.indexOf(".");
+  if (dot1 < 0) {
     return trimmed;
   }
-  return octets.map((octet) => String(Number(octet))).join(".");
+  const dot2 = trimmed.indexOf(".", dot1 + 1);
+  if (dot2 < 0) {
+    return trimmed;
+  }
+  const dot3 = trimmed.indexOf(".", dot2 + 1);
+  if (dot3 < 0 || trimmed.indexOf(".", dot3 + 1) >= 0) {
+    return trimmed;
+  }
+
+  const o1 = Number(trimmed.slice(0, dot1));
+  const o2 = Number(trimmed.slice(dot1 + 1, dot2));
+  const o3 = Number(trimmed.slice(dot2 + 1, dot3));
+  const o4 = Number(trimmed.slice(dot3 + 1));
+  return `${o1}.${o2}.${o3}.${o4}`;
 }
 
 function normalizeEntityValue(type: EntityType, value: string): string {
@@ -38,7 +70,7 @@ function normalizeEntityValue(type: EntityType, value: string): string {
     case "PHONE":
     case "CREDIT_CARD":
     case "AADHAAR":
-      return value.replace(/\D/g, "");
+      return extractDigitsFast(value);
     case "PAN":
       return value.trim().toUpperCase();
     case "IPV4":

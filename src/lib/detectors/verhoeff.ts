@@ -1,5 +1,3 @@
-const DIGITS_ONLY_PATTERN = /^\d+$/;
-
 const MULTIPLICATION_TABLE: readonly (readonly number[])[] = [
   [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
   [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
@@ -28,7 +26,7 @@ const PERMUTATION_TABLE: readonly (readonly number[])[] = [
  * Validates an ASCII digit string using the Verhoeff dihedral checksum algorithm.
  */
 export function isValidVerhoeff(digits: string): boolean {
-  if (!DIGITS_ONLY_PATTERN.test(digits)) {
+  if (digits.length === 0) {
     return false;
   }
 
@@ -36,6 +34,9 @@ export function isValidVerhoeff(digits: string): boolean {
 
   for (let offset = 0; offset < digits.length; offset += 1) {
     const digit = digits.charCodeAt(digits.length - 1 - offset) - 48;
+    if (digit < 0 || digit > 9) {
+      return false;
+    }
     const permRow = PERMUTATION_TABLE[offset % 8];
     const multRow = MULTIPLICATION_TABLE[checksum];
 

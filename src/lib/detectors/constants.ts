@@ -71,6 +71,50 @@ export function assertValidInputText(text: unknown): asserts text is string {
   }
 }
 
+function parseCanonicalUintSlice(value: string, startIndex: number, endIndex: number): number {
+  const length = endIndex - startIndex;
+  if (length <= 0) {
+    return -1;
+  }
+  const firstCode = value.charCodeAt(startIndex);
+  if (firstCode < 48 || firstCode > 57) {
+    return -1;
+  }
+  if (length > 1 && firstCode === 48) {
+    return -1;
+  }
+
+  let parsed = firstCode - 48;
+  for (let index = startIndex + 1; index < endIndex; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 48 || code > 57) {
+      return -1;
+    }
+    parsed = parsed * 10 + (code - 48);
+  }
+  return parsed;
+}
+
+function matchesDetectionId(id: string, type: EntityType, start: number, end: number): boolean {
+  const typeLength = type.length;
+  if (id.length < typeLength + 4 || !id.startsWith(type) || id.charCodeAt(typeLength) !== 58) {
+    return false;
+  }
+
+  const secondColon = id.indexOf(":", typeLength + 1);
+  if (secondColon <= typeLength + 1 || secondColon >= id.length - 1) {
+    return false;
+  }
+
+  const parsedStart = parseCanonicalUintSlice(id, typeLength + 1, secondColon);
+  if (parsedStart !== start) {
+    return false;
+  }
+
+  const parsedEnd = parseCanonicalUintSlice(id, secondColon + 1, id.length);
+  return parsedEnd === end;
+}
+
 /**
  * Checks whether a candidate detection conforms to structural, range, and explainability invariants.
  */
@@ -96,5 +140,5 @@ export function isValidDetectionCandidate(candidate: Detection): boolean {
   if (candidate.reasons.length === 0) {
     return false;
   }
-  return candidate.id === createDetectionId(candidate.type, candidate.start, candidate.end);
+  return matchesDetectionId(candidate.id, candidate.type, candidate.start, candidate.end);
 }

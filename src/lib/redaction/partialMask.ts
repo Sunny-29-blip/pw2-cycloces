@@ -4,11 +4,36 @@ import { FULL_MASK_PLACEHOLDER } from "./fullMask";
 import { applyPositionReplacements, validateRedactionInputs } from "./shared";
 
 const UNSAFE_CSV_CHARS = /[",]/g;
-const DIGIT_PATTERN = /\d/;
 const VISIBLE_TAIL_DIGITS = 4;
 
 function sanitizeReplacement(value: string): string {
+  if (!value.includes('"') && !value.includes(",")) {
+    return value;
+  }
   return value.replace(UNSAFE_CSV_CHARS, "");
+}
+
+function extractTailDigits(
+  value: string,
+  count: number,
+): {
+  readonly totalDigits: number;
+  readonly tail: string;
+} {
+  let totalDigits = 0;
+  let tail = "";
+
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 48 && code <= 57) {
+      totalDigits += 1;
+      if (tail.length < count) {
+        tail = value.charAt(index) + tail;
+      }
+    }
+  }
+
+  return { totalDigits, tail };
 }
 
 function maskEmail(value: string): string {
@@ -17,32 +42,44 @@ function maskEmail(value: string): string {
     return FULL_MASK_PLACEHOLDER;
   }
 
-  const localPart = value.slice(0, atIndex);
   const domain = value.slice(atIndex + 1);
-  const firstChar = localPart.charAt(0);
+  const firstChar = value.charAt(0);
   return sanitizeReplacement(`${firstChar}***@${domain}`);
 }
 
 function maskPhone(value: string): string {
-  const digitsOnly = value.replace(/\D/g, "");
-  if (digitsOnly.length <= VISIBLE_TAIL_DIGITS) {
-    return "*".repeat(digitsOnly.length || VISIBLE_TAIL_DIGITS);
+  let totalDigits = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 48 && code <= 57) {
+      totalDigits += 1;
+    }
   }
 
-  const digitsToMask = digitsOnly.length - VISIBLE_TAIL_DIGITS;
+  if (totalDigits <= VISIBLE_TAIL_DIGITS) {
+    return "*".repeat(totalDigits || VISIBLE_TAIL_DIGITS);
+  }
+
+  const digitsToMask = totalDigits - VISIBLE_TAIL_DIGITS;
   let maskedDigits = 0;
   let result = "";
 
-  for (const char of value) {
-    if (DIGIT_PATTERN.test(char)) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 48 && code <= 57) {
       if (maskedDigits < digitsToMask) {
         result += "*";
         maskedDigits += 1;
+        if (maskedDigits === digitsToMask) {
+          result += value.slice(index + 1);
+          break;
+        }
       } else {
-        result += char;
+        result += value.slice(index);
+        break;
       }
     } else {
-      result += char;
+      result += value.charAt(index);
     }
   }
 
@@ -50,27 +87,36 @@ function maskPhone(value: string): string {
 }
 
 function maskCreditCard(value: string): string {
-  const digits = value.replace(/\D/g, "");
-  if (digits.length < VISIBLE_TAIL_DIGITS) {
+  const { totalDigits, tail } = extractTailDigits(value, VISIBLE_TAIL_DIGITS);
+  if (totalDigits < VISIBLE_TAIL_DIGITS) {
     return "XXXX";
   }
-  return `XXXX-XXXX-XXXX-${digits.slice(-VISIBLE_TAIL_DIGITS)}`;
+  return `XXXX-XXXX-XXXX-${tail}`;
 }
 
 function maskAadhaar(value: string): string {
-  const digits = value.replace(/\D/g, "");
-  if (digits.length < VISIBLE_TAIL_DIGITS) {
+  const { totalDigits, tail } = extractTailDigits(value, VISIBLE_TAIL_DIGITS);
+  if (totalDigits < VISIBLE_TAIL_DIGITS) {
     return "XXXX XXXX XXXX";
   }
-  return `XXXX XXXX ${digits.slice(-VISIBLE_TAIL_DIGITS)}`;
+  return `XXXX XXXX ${tail}`;
 }
 
 function maskIpv4(value: string): string {
-  const octets = value.split(".");
-  if (octets.length !== 4 || !octets[0] || !octets[1]) {
+  const dot1 = value.indexOf(".");
+  if (dot1 <= 0) {
     return "*.*.*.*";
   }
-  return sanitizeReplacement(`${octets[0]}.${octets[1]}.*.*`);
+  const dot2 = value.indexOf(".", dot1 + 1);
+  if (dot2 <= dot1 + 1) {
+    return "*.*.*.*";
+  }
+  const dot3 = value.indexOf(".", dot2 + 1);
+  if (dot3 <= dot2 + 1 || dot3 >= value.length - 1 || value.indexOf(".", dot3 + 1) >= 0) {
+    return "*.*.*.*";
+  }
+
+  return sanitizeReplacement(`${value.slice(0, dot2)}.*.*`);
 }
 
 function maskPan(value: string): string {

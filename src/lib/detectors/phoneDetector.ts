@@ -14,48 +14,85 @@ const INDIAN_LOCAL_DIGITS = 10;
 const INDIAN_E164_DIGITS = 12;
 const MAX_SEPARATOR_GROUPS = 5;
 
-function hasBalancedParentheses(value: string): boolean {
-  let openCount = 0;
-  let closeCount = 0;
+const INDIAN_91_REASONS: readonly string[] = Object.freeze([
+  "Indian +91 country code matched.",
+  "10-digit subscriber number starting with 6-9 validated.",
+  "E.164 total digit length (12) validated.",
+]);
 
-  for (const char of value) {
-    if (char === "(") {
-      openCount += 1;
-    } else if (char === ")") {
-      closeCount += 1;
-      if (closeCount > openCount) {
-        return false;
+const INTL_PHONE_REASONS: readonly string[] = Object.freeze([
+  "International '+' country-code prefix matched.",
+  "E.164 digit length (7-15 digits) validated.",
+  "Separator and grouping boundaries validated.",
+]);
+
+const DOMESTIC_PHONE_REASONS: readonly string[] = Object.freeze([
+  "Indian 10-digit mobile pattern (6-9 prefix) matched.",
+  "Numeric boundary checks passed.",
+]);
+
+function buildInternationalDetection(value: string, start: number): Detection | null {
+  let openParens = 0;
+  let closeParens = 0;
+  let groupCount = 0;
+  let inGroup = false;
+  let digitCount = 0;
+  let firstDigit = -1;
+  let secondDigit = -1;
+  let thirdDigit = -1;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code === 40) {
+      openParens += 1;
+      if (openParens > 1) {
+        return null;
+      }
+    } else if (code === 41) {
+      closeParens += 1;
+      if (closeParens > openParens) {
+        return null;
+      }
+    }
+
+    if (index > 0) {
+      const isSeparator = code === 32 || code === 40 || code === 41 || code === 45;
+      if (isSeparator) {
+        inGroup = false;
+      } else if (!inGroup) {
+        inGroup = true;
+        groupCount += 1;
+        if (groupCount > MAX_SEPARATOR_GROUPS) {
+          return null;
+        }
+      }
+    }
+
+    if (code >= 48 && code <= 57) {
+      const digit = code - 48;
+      if (digitCount === 0) {
+        firstDigit = digit;
+      } else if (digitCount === 1) {
+        secondDigit = digit;
+      } else if (digitCount === 2) {
+        thirdDigit = digit;
+      }
+      digitCount += 1;
+      if (digitCount > MAX_E164_DIGITS) {
+        return null;
       }
     }
   }
 
-  return openCount === closeCount && openCount <= 1;
-}
-
-function buildInternationalDetection(value: string, start: number): Detection | null {
-  if (!hasBalancedParentheses(value)) {
-    return null;
-  }
-
-  const groups = value
-    .slice(1)
-    .split(/[ ()-]+/)
-    .filter((group) => group.length > 0);
-
-  if (groups.length === 0 || groups.length > MAX_SEPARATOR_GROUPS) {
-    return null;
-  }
-
-  const digits = value.replace(/\D/g, "");
-  if (digits.length < MIN_E164_DIGITS || digits.length > MAX_E164_DIGITS) {
+  if (openParens !== closeParens || groupCount === 0 || digitCount < MIN_E164_DIGITS) {
     return null;
   }
 
   const end = start + value.length;
 
-  if (digits.startsWith("91")) {
-    const subscriber = digits.slice(2);
-    if (digits.length !== INDIAN_E164_DIGITS || !/^[6-9]\d{9}$/.test(subscriber)) {
+  if (firstDigit === 9 && secondDigit === 1) {
+    if (digitCount !== INDIAN_E164_DIGITS || thirdDigit < 6 || thirdDigit > 9) {
       return null;
     }
 
@@ -66,11 +103,7 @@ function buildInternationalDetection(value: string, start: number): Detection | 
       end,
       value,
       confidence: "high",
-      reasons: [
-        "Indian +91 country code matched.",
-        "10-digit subscriber number starting with 6-9 validated.",
-        "E.164 total digit length (12) validated.",
-      ],
+      reasons: INDIAN_91_REASONS,
       severity: ENTITY_SEVERITY.PHONE,
     };
   }
@@ -82,18 +115,27 @@ function buildInternationalDetection(value: string, start: number): Detection | 
     end,
     value,
     confidence: "high",
-    reasons: [
-      "International '+' country-code prefix matched.",
-      "E.164 digit length (7-15 digits) validated.",
-      "Separator and grouping boundaries validated.",
-    ],
+    reasons: INTL_PHONE_REASONS,
     severity: ENTITY_SEVERITY.PHONE,
   };
 }
 
 function buildDomesticIndianDetection(value: string, start: number): Detection | null {
-  const digits = value.replace(/\D/g, "");
-  if (digits.length !== INDIAN_LOCAL_DIGITS || !/^[6-9]\d{9}$/.test(digits)) {
+  let digitCount = 0;
+  let firstDigit = -1;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 48 && code <= 57) {
+      const digit = code - 48;
+      if (digitCount === 0) {
+        firstDigit = digit;
+      }
+      digitCount += 1;
+    }
+  }
+
+  if (digitCount !== INDIAN_LOCAL_DIGITS || firstDigit < 6 || firstDigit > 9) {
     return null;
   }
 
@@ -105,10 +147,7 @@ function buildDomesticIndianDetection(value: string, start: number): Detection |
     end,
     value,
     confidence: "medium",
-    reasons: [
-      "Indian 10-digit mobile pattern (6-9 prefix) matched.",
-      "Numeric boundary checks passed.",
-    ],
+    reasons: DOMESTIC_PHONE_REASONS,
     severity: ENTITY_SEVERITY.PHONE,
   };
 }
@@ -123,29 +162,32 @@ export function detectPhones(text: string): readonly Detection[] {
   }
 
   const candidates: Detection[] = [];
+  INTERNATIONAL_PHONE_PATTERN.lastIndex = 0;
+  DOMESTIC_INDIAN_PHONE_PATTERN.lastIndex = 0;
 
-  for (const match of text.matchAll(INTERNATIONAL_PHONE_PATTERN)) {
-    const value = match[1];
-    const start = match.index;
-    if (value === undefined || start === undefined) {
-      continue;
+  try {
+    let match: RegExpExecArray | null;
+    while ((match = INTERNATIONAL_PHONE_PATTERN.exec(text)) !== null) {
+      const value = match[1];
+      const start = match.index;
+      if (value === undefined) {
+        continue;
+      }
+      const detection = buildInternationalDetection(value, start);
+      if (detection !== null) {
+        candidates.push(detection);
+      }
     }
-    const detection = buildInternationalDetection(value, start);
-    if (detection !== null) {
-      candidates.push(detection);
-    }
-  }
 
-  for (const match of text.matchAll(DOMESTIC_INDIAN_PHONE_PATTERN)) {
-    const value = match[0];
-    const start = match.index;
-    if (start === undefined) {
-      continue;
+    while ((match = DOMESTIC_INDIAN_PHONE_PATTERN.exec(text)) !== null) {
+      const detection = buildDomesticIndianDetection(match[0], match.index);
+      if (detection !== null) {
+        candidates.push(detection);
+      }
     }
-    const detection = buildDomesticIndianDetection(value, start);
-    if (detection !== null) {
-      candidates.push(detection);
-    }
+  } finally {
+    INTERNATIONAL_PHONE_PATTERN.lastIndex = 0;
+    DOMESTIC_INDIAN_PHONE_PATTERN.lastIndex = 0;
   }
 
   return resolveOverlaps(candidates);

@@ -1,6 +1,8 @@
 import type { Detection } from "../../types/detection";
 import { ENTITY_PRIORITY, isValidDetectionCandidate } from "./constants";
 
+const MAX_INT32 = 0x7fffffff;
+
 function compareCandidateOrder(a: Detection, b: Detection): number {
   const priorityDiff = ENTITY_PRIORITY[b.type] - ENTITY_PRIORITY[a.type];
   if (priorityDiff !== 0) {
@@ -17,19 +19,57 @@ function compareCandidateOrder(a: Detection, b: Detection): number {
     return startDiff;
   }
 
-  return a.type.localeCompare(b.type);
+  return a.type < b.type ? -1 : a.type > b.type ? 1 : 0;
 }
 
-function buildUniqueCoordinates(candidates: readonly Detection[]): number[] {
-  const rawCoords: number[] = new Array<number>(candidates.length * 2);
-  let writeIndex = 0;
+function buildUniqueCoordinates(candidates: readonly Detection[]): Int32Array | number[] {
+  const coordCount = candidates.length * 2;
+  let maxCoord = 0;
+  const int32Coords = new Int32Array(coordCount);
+  let fitsInt32 = true;
 
-  for (const candidate of candidates) {
-    rawCoords[writeIndex] = candidate.start;
-    rawCoords[writeIndex + 1] = candidate.end;
-    writeIndex += 2;
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    if (!candidate) {
+      continue;
+    }
+    const start = candidate.start;
+    const end = candidate.end;
+    if (start > MAX_INT32 || end > MAX_INT32) {
+      fitsInt32 = false;
+      break;
+    }
+    if (end > maxCoord) {
+      maxCoord = end;
+    }
+    int32Coords[index * 2] = start;
+    int32Coords[index * 2 + 1] = end;
   }
 
+  if (fitsInt32) {
+    int32Coords.sort();
+    let uniqueCount = 0;
+    let previous = -1;
+    for (let index = 0; index < coordCount; index += 1) {
+      const coord = int32Coords[index] ?? -1;
+      if (coord !== previous) {
+        int32Coords[uniqueCount] = coord;
+        uniqueCount += 1;
+        previous = coord;
+      }
+    }
+    return int32Coords.subarray(0, uniqueCount);
+  }
+
+  const rawCoords = new Array<number>(coordCount);
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    if (!candidate) {
+      continue;
+    }
+    rawCoords[index * 2] = candidate.start;
+    rawCoords[index * 2 + 1] = candidate.end;
+  }
   rawCoords.sort((a, b) => a - b);
 
   const unique: number[] = [];
@@ -43,7 +83,7 @@ function buildUniqueCoordinates(candidates: readonly Detection[]): number[] {
   return unique;
 }
 
-function lowerBound(sortedValues: readonly number[], target: number): number {
+function lowerBound(sortedValues: Int32Array | readonly number[], target: number): number {
   let low = 0;
   let high = sortedValues.length;
 

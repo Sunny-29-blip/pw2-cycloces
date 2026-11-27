@@ -7,20 +7,63 @@ const CARD_CANDIDATE_PATTERN = /(?<![\dA-Za-z+]|\d[ -])(?:\d[ -]?){12,18}\d(?![\
 const MIN_CARD_DIGITS = 13;
 const MAX_CARD_DIGITS = 19;
 
-const ISSUER_REASONS: Readonly<Record<CardIssuer, string>> = {
-  VISA: "Visa prefix and length recognized.",
-  MASTERCARD: "Mastercard prefix and length recognized.",
-  AMEX: "American Express prefix and length recognized.",
-  RUPAY: "RuPay prefix and length recognized.",
-  UNKNOWN: "Issuer prefix not in recognized set; classified as UNKNOWN.",
+const REASONS_BY_ISSUER: Readonly<Record<CardIssuer, readonly string[]>> = {
+  VISA: Object.freeze([
+    "Valid card-number length.",
+    "Luhn checksum passed.",
+    "Visa prefix and length recognized.",
+  ]),
+  MASTERCARD: Object.freeze([
+    "Valid card-number length.",
+    "Luhn checksum passed.",
+    "Mastercard prefix and length recognized.",
+  ]),
+  AMEX: Object.freeze([
+    "Valid card-number length.",
+    "Luhn checksum passed.",
+    "American Express prefix and length recognized.",
+  ]),
+  RUPAY: Object.freeze([
+    "Valid card-number length.",
+    "Luhn checksum passed.",
+    "RuPay prefix and length recognized.",
+  ]),
+  UNKNOWN: Object.freeze([
+    "Valid card-number length.",
+    "Luhn checksum passed.",
+    "Issuer prefix not in recognized set; classified as UNKNOWN.",
+  ]),
 };
 
-function hasValidSeparatorGrouping(candidate: string): boolean {
-  if (!candidate.includes(" ") && !candidate.includes("-")) {
-    return true;
+function extractCardDigitsIfValid(candidate: string): string | null {
+  let hasSeparator = false;
+  let runLength = 0;
+  let digits = "";
+
+  for (let index = 0; index < candidate.length; index += 1) {
+    const code = candidate.charCodeAt(index);
+    if (code === 32 || code === 45) {
+      if (runLength < 2) {
+        return null;
+      }
+      if (!hasSeparator) {
+        hasSeparator = true;
+        digits = candidate.slice(0, index);
+      }
+      runLength = 0;
+    } else {
+      runLength += 1;
+      if (hasSeparator) {
+        digits += candidate.charAt(index);
+      }
+    }
   }
-  const chunks = candidate.split(/[ -]/);
-  return chunks.every((chunk) => chunk.length >= 2);
+
+  if (hasSeparator && runLength < 2) {
+    return null;
+  }
+
+  return hasSeparator ? digits : candidate;
 }
 
 /**
@@ -74,37 +117,39 @@ export function detectCreditCards(text: string): readonly Detection[] {
   }
 
   const detections: Detection[] = [];
+  CARD_CANDIDATE_PATTERN.lastIndex = 0;
 
-  for (const match of text.matchAll(CARD_CANDIDATE_PATTERN)) {
-    const value = match[0];
-    const start = match.index;
-    if (start === undefined || !hasValidSeparatorGrouping(value)) {
-      continue;
+  try {
+    let match: RegExpExecArray | null;
+    while ((match = CARD_CANDIDATE_PATTERN.exec(text)) !== null) {
+      const value = match[0];
+      const start = match.index;
+      const digits = extractCardDigitsIfValid(value);
+      if (digits === null || digits.length < MIN_CARD_DIGITS || digits.length > MAX_CARD_DIGITS) {
+        continue;
+      }
+
+      if (!isValidLuhn(digits)) {
+        continue;
+      }
+
+      const issuer = classifyCardIssuer(digits);
+      const confidence = issuer === "UNKNOWN" ? "medium" : "high";
+      const end = start + value.length;
+
+      detections.push({
+        id: createDetectionId("CREDIT_CARD", start, end),
+        type: "CREDIT_CARD",
+        start,
+        end,
+        value,
+        confidence,
+        reasons: REASONS_BY_ISSUER[issuer],
+        severity: ENTITY_SEVERITY.CREDIT_CARD,
+      });
     }
-
-    const digits = value.replace(/[ -]/g, "");
-    if (digits.length < MIN_CARD_DIGITS || digits.length > MAX_CARD_DIGITS) {
-      continue;
-    }
-
-    if (!isValidLuhn(digits)) {
-      continue;
-    }
-
-    const issuer = classifyCardIssuer(digits);
-    const confidence = issuer === "UNKNOWN" ? "medium" : "high";
-    const end = start + value.length;
-
-    detections.push({
-      id: createDetectionId("CREDIT_CARD", start, end),
-      type: "CREDIT_CARD",
-      start,
-      end,
-      value,
-      confidence,
-      reasons: ["Valid card-number length.", "Luhn checksum passed.", ISSUER_REASONS[issuer]],
-      severity: ENTITY_SEVERITY.CREDIT_CARD,
-    });
+  } finally {
+    CARD_CANDIDATE_PATTERN.lastIndex = 0;
   }
 
   return detections;

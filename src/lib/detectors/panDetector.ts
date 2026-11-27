@@ -7,7 +7,16 @@ import {
 } from "./constants";
 
 const PAN_CANDIDATE_PATTERN = /(?<![A-Za-z0-9])([A-Z]{5}[0-9]{4}[A-Z])(?![A-Za-z0-9])/g;
-const PAN_EXACT_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+
+const PAN_REASONS_BY_CATEGORY: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
+  Array.from(PAN_HOLDER_CATEGORIES, (category) => [
+    category,
+    Object.freeze([
+      "PAN format matched.",
+      `Valid holder-category character '${category}' verified.`,
+    ]),
+  ]),
+);
 
 /**
  * Detects Indian Permanent Account Number (PAN) identifiers and validates holder-category codes.
@@ -19,33 +28,36 @@ export function detectPans(text: string): readonly Detection[] {
   }
 
   const detections: Detection[] = [];
+  PAN_CANDIDATE_PATTERN.lastIndex = 0;
 
-  for (const match of text.matchAll(PAN_CANDIDATE_PATTERN)) {
-    const value = match[1];
-    const start = match.index;
-    if (value === undefined || start === undefined || !PAN_EXACT_PATTERN.test(value)) {
-      continue;
+  try {
+    let match: RegExpExecArray | null;
+    while ((match = PAN_CANDIDATE_PATTERN.exec(text)) !== null) {
+      const value = match[1];
+      const start = match.index;
+      if (value === undefined) {
+        continue;
+      }
+
+      const reasons = PAN_REASONS_BY_CATEGORY[value.charAt(3)];
+      if (reasons === undefined) {
+        continue;
+      }
+
+      const end = start + value.length;
+      detections.push({
+        id: createDetectionId("PAN", start, end),
+        type: "PAN",
+        start,
+        end,
+        value,
+        confidence: "high",
+        reasons,
+        severity: ENTITY_SEVERITY.PAN,
+      });
     }
-
-    const holderCategory = value.charAt(3);
-    if (!PAN_HOLDER_CATEGORIES.has(holderCategory)) {
-      continue;
-    }
-
-    const end = start + value.length;
-    detections.push({
-      id: createDetectionId("PAN", start, end),
-      type: "PAN",
-      start,
-      end,
-      value,
-      confidence: "high",
-      reasons: [
-        "PAN format matched.",
-        `Valid holder-category character '${holderCategory}' verified.`,
-      ],
-      severity: ENTITY_SEVERITY.PAN,
-    });
+  } finally {
+    PAN_CANDIDATE_PATTERN.lastIndex = 0;
   }
 
   return detections;

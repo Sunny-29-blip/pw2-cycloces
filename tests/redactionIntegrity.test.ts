@@ -112,4 +112,40 @@ describe("redaction text and CSV integrity", () => {
 
     expect(() => redactText(sensitiveEmail, overlapping, "FULL")).toThrow(RangeError);
   });
+
+  it("handles unsorted valid detections, rejects duplicate IDs, and validates ignoredIds", () => {
+    const text = "PAN ABCPD1234F and email alice@example.com";
+    const pan: Detection = {
+      id: createDetectionId("PAN", 4, 14),
+      type: "PAN",
+      start: 4,
+      end: 14,
+      value: "ABCPD1234F",
+      confidence: "high",
+      reasons: ["PAN format matched."],
+      severity: 4,
+    };
+    const email: Detection = {
+      id: createDetectionId("EMAIL", 25, 42),
+      type: "EMAIL",
+      start: 25,
+      end: 42,
+      value: "alice@example.com",
+      confidence: "high",
+      reasons: ["RFC-lite email syntax matched."],
+      severity: 3,
+    };
+
+    const unsorted = redactText(text, [email, pan], "FULL", new Set([pan.id]));
+    expect(unsorted.sanitizedText).toBe("PAN ABCPD1234F and email [REDACTED]");
+    expect(unsorted.redactedCount).toBe(1);
+    expect(unsorted.ignoredCount).toBe(1);
+
+    expect(() => redactText(text, [pan, pan], "FULL")).toThrow(
+      "Duplicate detection ID supplied to redaction engine.",
+    );
+    expect(() => redactText(text, [pan, email], "FULL", new Set(["EMAIL:025:42"]))).toThrow(
+      "Ignored detection ID does not belong to the supplied detections.",
+    );
+  });
 });

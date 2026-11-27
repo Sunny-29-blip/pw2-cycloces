@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { type ReactElement, useMemo } from "react";
 import { ENTITY_PRIORITY_ORDER } from "../lib/detectors";
 import type { ConfidenceLevel, Detection, EntityType } from "../types/detection";
 
@@ -27,25 +27,29 @@ export function DetectionSummary({
   keptCount,
   isProcessing,
 }: DetectionSummaryProps): ReactElement {
-  const countsByType: Record<EntityType, number> = {
-    CREDIT_CARD: 0,
-    AADHAAR: 0,
-    PAN: 0,
-    IPV4: 0,
-    EMAIL: 0,
-    PHONE: 0,
-  };
+  const { countsByType, countsByConfidence } = useMemo(() => {
+    const typeCounts: Record<EntityType, number> = {
+      CREDIT_CARD: 0,
+      AADHAAR: 0,
+      PAN: 0,
+      IPV4: 0,
+      EMAIL: 0,
+      PHONE: 0,
+    };
 
-  const countsByConfidence: Record<ConfidenceLevel, number> = {
-    high: 0,
-    medium: 0,
-    low: 0,
-  };
+    const confidenceCounts: Record<ConfidenceLevel, number> = {
+      high: 0,
+      medium: 0,
+      low: 0,
+    };
 
-  for (const detection of detections) {
-    countsByType[detection.type] += 1;
-    countsByConfidence[detection.confidence] += 1;
-  }
+    for (const detection of detections) {
+      typeCounts[detection.type] += 1;
+      confidenceCounts[detection.confidence] += 1;
+    }
+
+    return { countsByType: typeCounts, countsByConfidence: confidenceCounts };
+  }, [detections]);
 
   return (
     <section

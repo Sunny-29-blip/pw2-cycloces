@@ -9,6 +9,41 @@ export interface ValidatedRedactionContext {
   readonly ignoredIds: ReadonlySet<string>;
 }
 
+function containsDetectionId(sortedDetections: readonly Detection[], targetId: string): boolean {
+  const firstColon = targetId.indexOf(":");
+  if (firstColon <= 0) {
+    return false;
+  }
+  const secondColon = targetId.indexOf(":", firstColon + 1);
+  if (secondColon <= firstColon + 1 || secondColon >= targetId.length - 1) {
+    return false;
+  }
+
+  const targetStart = Number(targetId.slice(firstColon + 1, secondColon));
+  if (!Number.isInteger(targetStart) || targetStart < 0) {
+    return false;
+  }
+
+  let low = 0;
+  let high = sortedDetections.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const candidate = sortedDetections[mid];
+    if (!candidate) {
+      return false;
+    }
+    if (candidate.start === targetStart) {
+      return candidate.id === targetId;
+    }
+    if (candidate.start < targetStart) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return false;
+}
+
 /**
  * Validates source text, detection boundaries, non-overlap invariants, and ignored IDs
  * without mutating any input arguments or leaking raw PII in error messages.
@@ -28,37 +63,56 @@ export function validateRedactionInputs(
     throw new TypeError("Ignored detection IDs must be provided as a Set.");
   }
 
-  const seenIds = new Set<string>();
+  const textLength = text.length;
+  let prevEnd = -1;
+  let isAlreadySortedAndDisjoint = true;
 
-  for (const detection of detections) {
-    if (!isValidDetectionCandidate(detection)) {
+  for (let index = 0; index < detections.length; index += 1) {
+    const detection = detections[index];
+    if (!detection || !isValidDetectionCandidate(detection)) {
       throw new RangeError("Invalid detection candidate supplied to redaction engine.");
     }
-    if (detection.end > text.length) {
+    if (detection.end > textLength) {
       throw new RangeError("Detection span exceeds source text length.");
     }
-    if (text.slice(detection.start, detection.end) !== detection.value) {
+    if (!text.startsWith(detection.value, detection.start)) {
       throw new RangeError("Detection span does not match source text slice.");
     }
-    if (seenIds.has(detection.id)) {
-      throw new RangeError("Duplicate detection ID supplied to redaction engine.");
+    if (isAlreadySortedAndDisjoint && detection.start < prevEnd) {
+      isAlreadySortedAndDisjoint = false;
     }
-    seenIds.add(detection.id);
+    prevEnd = detection.end;
   }
 
-  const sortedDetections = [...detections].sort((a, b) => a.start - b.start || a.end - b.end);
+  let sortedDetections: readonly Detection[];
 
-  for (let index = 1; index < sortedDetections.length; index += 1) {
-    const previous = sortedDetections[index - 1];
-    const current = sortedDetections[index];
-    if (previous && current && previous.end > current.start) {
-      throw new RangeError("Detections supplied to redaction engine must not overlap.");
+  if (isAlreadySortedAndDisjoint) {
+    sortedDetections = detections;
+  } else {
+    const seenIds = new Set<string>();
+    for (const detection of detections) {
+      if (seenIds.has(detection.id)) {
+        throw new RangeError("Duplicate detection ID supplied to redaction engine.");
+      }
+      seenIds.add(detection.id);
     }
+
+    const sortedCopy = [...detections].sort((a, b) => a.start - b.start || a.end - b.end);
+    for (let index = 1; index < sortedCopy.length; index += 1) {
+      const previous = sortedCopy[index - 1];
+      const current = sortedCopy[index];
+      if (previous && current && previous.end > current.start) {
+        throw new RangeError("Detections supplied to redaction engine must not overlap.");
+      }
+    }
+    sortedDetections = sortedCopy;
   }
 
-  for (const ignoredId of ignoredIds) {
-    if (typeof ignoredId !== "string" || !seenIds.has(ignoredId)) {
-      throw new RangeError("Ignored detection ID does not belong to the supplied detections.");
+  if (ignoredIds.size > 0) {
+    for (const ignoredId of ignoredIds) {
+      if (typeof ignoredId !== "string" || !containsDetectionId(sortedDetections, ignoredId)) {
+        throw new RangeError("Ignored detection ID does not belong to the supplied detections.");
+      }
     }
   }
 

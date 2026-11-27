@@ -113,6 +113,15 @@ describe("segment-tree resolveOverlaps", () => {
 
     expect(resolveOverlaps(invalidCandidates)).toEqual([valid]);
     expect(resolveOverlaps(invalidCandidates.slice(0, 4))).toEqual([]);
+
+    const malformedIds: Detection[] = [
+      { ...valid, id: "EMAIL:010:22" },
+      { ...valid, id: "EMAIL:10:022" },
+      { ...valid, id: "EMAIL:10:22:extra" },
+      { ...valid, id: "EMAIL:10:22a" },
+      { ...valid, id: "PAN:10:22" },
+    ];
+    expect(resolveOverlaps(malformedIds)).toEqual([]);
   });
 
   it("matches the naive reference oracle across 2,000 deterministic randomized candidate sets", () => {
