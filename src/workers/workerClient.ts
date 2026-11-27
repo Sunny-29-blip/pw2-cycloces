@@ -2,13 +2,13 @@ import type { Detection } from "../types/detection";
 import type { DetectionWorkerRequest, DetectionWorkerResponse } from "../types/worker";
 
 /**
- * Minimal Web Worker interface enabling deterministic unit testing without browser globals.
+ * Minimal Web Worker interface compatible with native browser `Worker` instances
+ * while enabling deterministic unit testing without browser globals.
  */
-export interface WorkerLike {
+export interface WorkerLike extends Pick<Worker, "terminate"> {
   postMessage(message: DetectionWorkerRequest): void;
-  terminate(): void;
   onmessage: ((event: MessageEvent<DetectionWorkerResponse>) => void) | null;
-  onerror: ((event: Event) => void) | null;
+  onerror: ((event: ErrorEvent) => void) | null;
 }
 
 /**
