@@ -190,7 +190,7 @@ export function SideBySideWorkspace({
           </h3>
           <div className="min-h-64 overflow-auto rounded-lg border border-[#d2d2d7] bg-[#f9f9fb] p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words text-[#1d1d1f] dark:border-[#2d313a] dark:bg-[#0b0c0e] dark:text-[#f5f5f7]">
             {!hasText ? (
-              <span className="font-sans text-xs text-[#6e6e73] dark:text-[#8e8e93]">
+              <span className="font-sans text-xs text-[#515154] dark:text-[#a1a1aa]">
                 Original document highlights will appear here.
               </span>
             ) : (
@@ -236,7 +236,7 @@ export function SideBySideWorkspace({
             className="min-h-64 overflow-auto rounded-lg border border-[#d2d2d7] bg-[#f9f9fb] p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words text-[#1d1d1f] dark:border-[#2d313a] dark:bg-[#0b0c0e] dark:text-[#f5f5f7]"
           >
             {!hasText ? (
-              <span className="font-sans text-xs text-[#6e6e73] dark:text-[#8e8e93]">
+              <span className="font-sans text-xs text-[#515154] dark:text-[#a1a1aa]">
                 Sanitized output updates automatically as you edit or toggle detections.
               </span>
             ) : (

@@ -32,6 +32,9 @@ export function Header({ theme, onToggleTheme }: HeaderProps): ReactElement {
           <p className="text-sm text-[#515154] dark:text-[#a1a1aa]">
             Document text and raw identifiers remain in your browser during sanitization.
           </p>
+          <p className="text-xs text-[#515154] dark:text-[#a1a1aa]">
+            Every redaction is explainable, reviewable, and never leaves your browser.
+          </p>
         </div>
 
         <button

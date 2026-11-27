@@ -1,4 +1,11 @@
-import { type ChangeEvent, type ReactElement, useId, useRef } from "react";
+import {
+  type ChangeEvent,
+  type DragEvent,
+  type ReactElement,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 export interface InputPanelProps {
   readonly text: string;
@@ -26,7 +33,10 @@ export function InputPanel({
 }: InputPanelProps): ReactElement {
   const textareaId = useId();
   const fileInputId = useId();
+  const helperTextId = useId();
+  const errorAlertId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -36,10 +46,37 @@ export function InputPanel({
     event.target.value = "";
   };
 
+  const handleDragOver = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      onFileSelect(file);
+    }
+  };
+
   return (
     <section
       aria-labelledby={`${textareaId}-heading`}
-      className="rounded-xl border border-[#d2d2d7] bg-white p-6 shadow-xs dark:border-[#2d313a] dark:bg-[#15171c]"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`rounded-xl border bg-white p-6 shadow-xs transition-colors dark:bg-[#15171c] ${
+        isDragging
+          ? "border-[#0066cc] ring-2 ring-[#0066cc]/25 dark:border-[#4da3ff] dark:ring-[#4da3ff]/25"
+          : "border-[#d2d2d7] dark:border-[#2d313a]"
+      }`}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -49,8 +86,9 @@ export function InputPanel({
           >
             Source Document
           </h2>
-          <p className="mt-1 text-xs text-[#515154] dark:text-[#a1a1aa]">
-            Paste text directly or load a local .txt / .csv file up to 2 MB.
+          <p id={helperTextId} className="mt-1 text-xs text-[#515154] dark:text-[#a1a1aa]">
+            Paste text, drop a file here, or upload a local .txt / .csv file (max 2 MB, processed in
+            browser memory).
           </p>
         </div>
 
@@ -97,8 +135,10 @@ export function InputPanel({
           value={text}
           onChange={(event) => onTextChange(event.target.value)}
           rows={7}
+          aria-describedby={fileError !== null ? `${helperTextId} ${errorAlertId}` : helperTextId}
+          aria-invalid={fileError !== null ? true : undefined}
           placeholder="Paste logs, support transcripts, customer records, or CSV content here. Detection runs automatically in a local Web Worker."
-          className="w-full resize-y rounded-lg border border-[#d2d2d7] bg-[#f9f9fb] p-4 font-mono text-sm leading-relaxed text-[#1d1d1f] placeholder:text-[#6e6e73] dark:border-[#2d313a] dark:bg-[#0b0c0e] dark:text-[#f5f5f7] dark:placeholder:text-[#8e8e93]"
+          className="w-full resize-y rounded-lg border border-[#d2d2d7] bg-[#f9f9fb] p-4 font-mono text-sm leading-relaxed text-[#1d1d1f] placeholder:text-[#515154] dark:border-[#2d313a] dark:bg-[#0b0c0e] dark:text-[#f5f5f7] dark:placeholder:text-[#a1a1aa]"
         />
       </div>
 
@@ -124,6 +164,7 @@ export function InputPanel({
 
       {fileError !== null && (
         <div
+          id={errorAlertId}
           role="alert"
           className="mt-4 rounded-lg border border-[#f5c2c7] bg-[#fdf2f4] px-4 py-3 text-xs font-medium text-[#842029] dark:border-[#7f1d1d] dark:bg-[#2a1215] dark:text-[#fca5a5]"
         >

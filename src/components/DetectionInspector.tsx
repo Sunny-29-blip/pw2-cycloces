@@ -146,7 +146,8 @@ export function DetectionInspector({
                   </span>
                 </div>
                 <p className="text-xs text-[#515154] dark:text-[#a1a1aa]">
-                  Offsets {activeDetection.start}–{activeDetection.end} · Status:{" "}
+                  Offsets {activeDetection.start}–{activeDetection.end} (
+                  {activeDetection.end - activeDetection.start} chars) · Status:{" "}
                   <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">
                     {ignoredIds.has(activeDetection.id) ? "Kept unchanged" : "Redacted"}
                   </strong>

@@ -81,6 +81,10 @@ export function PrivacyRiskMeter({ assessment }: PrivacyRiskMeterProps): ReactEl
       <p className="mt-4 text-xs leading-relaxed text-[#515154] dark:text-[#a1a1aa]">
         {assessment.explanation}
       </p>
+      <p className="mt-2 text-xs text-[#515154] dark:text-[#a1a1aa]">
+        Bands: 0–25 Low Risk · 26–65 Moderate Risk · 66–100 High Risk. Keeping high-severity
+        detections unchanged increases the score.
+      </p>
     </section>
   );
 }

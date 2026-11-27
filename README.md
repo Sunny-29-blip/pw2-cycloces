@@ -1,162 +1,133 @@
 # CYLOCES — Explainable, Auditable, Local-First PII Sanitizer
 
-> **Document text and raw identifiers remain in your browser during sanitization.**
+> **Every redaction is explainable, reviewable, and never leaves your browser.**
 
-## 1. CYLOCES Overview
+## 1. Introduction
 
-**CYLOCES** is a client-side Personally Identifiable Information (PII) inspection and sanitization workbench built with React, TypeScript, Vite, Tailwind CSS, and Web Workers, paired with an optional, consent-gated Vercel serverless summary endpoint powered by Google Gemini (`@google/genai`).
-
----
-
-## 2. Problem Statement
-
-Teams frequently need to share application logs, support transcripts, incident reports, and CSV exports without exposing sensitive personal identifiers. Opaque cloud tools require uploading raw sensitive documents without explaining why tokens were flagged, how transformations work, or what exposure remains if select entities are kept for operational context.
-
-CYLOCES performs PII detection, explainable scoring, interactive redaction, and privacy-safe audit reporting directly inside browser memory.
+**CYLOCES** is an explainable, client-side Personally Identifiable Information (PII) inspection and sanitization workbench built with React 19, TypeScript (strict mode), Tailwind CSS v4, Vite 8, and Web Workers. An optional, explicitly opt-in serverless endpoint powered by Google Gemini (`@google/genai`) summarizes aggregate risk metrics without receiving document text or raw identifiers.
 
 ---
 
-## 3. Key Features
+## 2. Problem Statement & Why It Matters
+
+Engineering, support, and security teams routinely share application logs, incident reports, transcripts, and CSV exports across ticketing tools and external workflows. Uploading unredacted records to third-party cloud sanitizers introduces unnecessary data exposure, while blind regex scripts rarely explain _why_ tokens matched, fail to check checksums, or omit audit trails when select fields must be kept for debugging.
+
+CYLOCES resolves this directly inside browser memory: detection, checksum validation, interactive overrides, redaction, risk scoring, and audit export generation all run locally on the client.
+
+---
+
+## 3. Implemented Key Features
 
 - **Six Deterministic PII Detectors:** `EMAIL`, `PHONE`, `IPV4`, `PAN`, `AADHAAR`, and `CREDIT_CARD`.
-- **Explainable Flagging:** Every detection exposes entity type, confidence (`high`, `medium`, `low`), integer severity (`1–5`), byte/character offsets, and the exact validation checks that passed.
-- **Three Redaction Modes:** `FULL` (`[REDACTED]`), `PARTIAL` (format-aware masking), and `PSEUDONYMIZE` (session-local normalized placeholders like `EMAIL_01`).
-- **Interactive Overrides:** Click-to-toggle any detected entity between **Redacted** and **Kept**, updating live output and risk score immediately.
-- **Off-Thread Web Worker Detection:** Keeps scanning off the main UI thread with stale-response cancellation.
-- **Privacy Risk Meter:** Severity-weighted `0–100` score measuring unredacted identifier exposure.
-- **PII-Free Audit Exports:** Downloadable JSON and CSV audit reports containing only counts, offsets, types, and decisions.
-- **Local `.txt` / `.csv` Processing:** Upload local files up to 2 MB, preview side by side, and download sanitized output preserving extensions and CSV integrity.
-- **Optional Gemini Compliance Summary:** Opt-in, consent-gated summary sending only aggregate counts by type and risk score.
+- **Explainable Match Metadata:** Each detection records entity type, confidence (`high`, `medium`, `low`), integer severity (`1–5`), exact character offsets (`[start, end)`), span length, and human-readable validation reasons.
+- **Three Redaction Modes:** `FULL` (`[REDACTED]`), `PARTIAL` (format-aware masking), and `PSEUDONYMIZE` (session-scoped normalized placeholders such as `EMAIL_01`).
+- **Interactive Keep / Redact Review:** Toggle individual detections between Redacted and Kept unchanged; live sanitized output and unredacted exposure risk recalculate immediately.
+- **Off-Thread Web Worker + High-Density Pagination:** Scans run in a dedicated module Web Worker with stale-response cancellation; `DetectionInspector` paginates at 50 detections/page and `SideBySideWorkspace` automatically paginates documents above 250 detections in 100-detection sections while keeping full-document downloads and audit reports complete.
+- **Privacy Risk Meter (`0–100`):** Severity-weighted unredacted exposure score with `Low` (`0–25`), `Moderate` (`26–65`), and `High` (`66–100`) bands.
+- **PII-Free Audit Exports:** Downloadable JSON (`cyloces-audit-report.json`) and RFC 4180-safe CSV (`cyloces-audit-report.csv`) reports containing only counts, offsets, types, and `REDACTED`/`KEPT` decisions.
+- **Local File Input & Drag-and-Drop:** Supports `.txt` and `.csv` files up to 2 MB in browser memory, rejecting empty files, mismatched MIME types, and binary NUL bytes.
+- **Optional Gemini AI Compliance Summary:** Disabled until the user checks consent and clicks `Generate Summary`; sends only aggregate `countsByType` and `riskScore`, with request cancellation and structured JSON error handling.
 
 ---
 
-## 4. Technology Stack
-
-| Layer                      | Technology                                              |
-| -------------------------- | ------------------------------------------------------- |
-| Frontend & UI              | React 19, TypeScript (Strict Mode), Tailwind CSS v4     |
-| Build & Dev Server         | Vite 8                                                  |
-| Off-Thread Execution       | Browser Module Web Worker (`src/workers/piiWorker.ts`)  |
-| Unit & Component Tests     | Vitest 5, Testing Library (`jsdom`)                     |
-| Code Quality               | ESLint 10, TypeScript ESLint, Prettier 3                |
-| Optional AI Endpoint       | Vercel Node.js Fetch Function + `@google/genai`         |
-| Hosting & Security Headers | Vercel + Strict Content Security Policy (`vercel.json`) |
-| CI Pipeline                | GitHub Actions (`.github/workflows/ci.yml`)             |
-
----
-
-## 5. Architecture Diagram
+## 4. Architecture Overview
 
 ```mermaid
 flowchart LR
-  Input["Source Text / .txt / .csv (Browser Memory)"] --> Worker["Web Worker (piiWorker.ts)"]
-  Worker --> Detectors["6 Independent Detectors + Overlap Resolver"]
+  Input["Source Text / .txt / .csv (Browser Memory)"] --> Worker["Module Web Worker (piiWorker.ts)"]
+  Worker --> Detectors["6 Independent Detectors + O(N log N) Segment Tree Resolver"]
   Detectors --> State["React App State (Detections + Ignored IDs + Mode)"]
   State --> Redactor["Redaction Engine (FULL / PARTIAL / PSEUDONYMIZE)"]
   State --> Risk["Privacy Risk Meter (0-100)"]
-  State --> Audit["Audit Export (JSON / CSV, Zero Raw PII)"]
-  State -. "Opt-In Consent Only (Counts + Risk Score)" .-> Api["Vercel Function (/api/summary)"]
+  State --> Audit["PII-Free Audit Export (JSON / CSV)"]
+  State -. "Explicit User Consent Only (Counts + Risk Score)" .-> Api["Vercel Function (POST /api/summary)"]
   Api --> Gemini["Google Gemini (@google/genai)"]
 ```
 
----
-
-## 6. Detection Algorithms
-
-Each detector runs independently with separated pattern extraction and structural/mathematical validation, followed by priority-ordered overlap resolution (`CREDIT_CARD > AADHAAR > PAN > IPV4 > EMAIL > PHONE`; longest match wins on equal priority):
-
-- **`EMAIL`:** Practical RFC-lite local-part and domain boundary checks (`<= 254` chars, valid labels, alphabetic TLD `2–24` chars, rejecting `..` and malformed boundaries).
-- **`PHONE`:** Indian 10-digit numbers starting with `6–9`, `+91` numbers (12 digits with `[6-9]` subscriber), and international `+` E.164 numbers (`7–15` digits, balanced parentheses), while rejecting dates, decimals, order prefixes, and card/Aadhaar substrings.
-- **`IPV4`:** Four-octet dotted decimal validation (`0–255` per octet, rejecting multi-digit leading zeros, `999.1.1.1`, 5-octet strings, and alphanumeric boundary tokens).
-- **`PAN`:** `[A-Z]{5}[0-9]{4}[A-Z]` with strict token boundaries and fourth-character holder category verification (`P, C, H, F, A, B, G, J, L, T`).
-- **`AADHAAR`:** 12 continuous or `4-4-4` space-separated digits, first digit `2–9`, Verhoeff checksum validation, and boundary guards against 16-digit card substrings.
-- **`CREDIT_CARD`:** `13–19` digits with optional space/hyphen grouping, Luhn checksum validation, and reliable prefix/length classification (`VISA`, `MASTERCARD`, `AMEX`, `RUPAY`, or `UNKNOWN`).
-
----
-
-## 7. Checksum Validation Explanation
-
-- **Luhn (`src/lib/detectors/luhn.ts`):** Doubles every second digit from right to left (subtracting `9` when `> 9`) and verifies `sum % 10 === 0`. Any candidate failing Luhn is discarded completely.
-- **Verhoeff (`src/lib/detectors/verhoeff.ts`):** Applies the dihedral group $D_5$ multiplication and 8-row permutation tables across digits from right to left, verifying final state `=== 0`. Any candidate failing Verhoeff is discarded completely.
-
-> Checksum validation confirms mathematical structural validity and prevents common transcription/random false positives; it does **not** prove that an identifier was officially issued or belongs to a real person.
-
----
-
-## 8. Detection Confidence and Explainability
-
-- **`high`:** All format, boundary, and checksum/issuer checks pass with strong evidence (`EMAIL`, `IPV4`, `PAN`, `AADHAAR`, `+`-prefixed `PHONE`, and `CREDIT_CARD` with a recognized issuer prefix).
-- **`medium`:** Format and validation pass, but issuer or country-code context is limited (`CREDIT_CARD` passing Luhn with `UNKNOWN` issuer; domestic 10-digit Indian `PHONE` without `+91`).
-- **`low`:** Reserved strictly for genuinely weaker valid rules; invalid checksums are never reported at any confidence level.
-- Every detection records `reasons` directly describing the checks executed for that entity.
-
----
-
-## 9. Three Redaction Modes
-
-| Mode           | Transformation                                                                                                                                                                     | Example                                                                                                                                                                                                                                |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FULL`         | Replaces non-ignored spans with `[REDACTED]`                                                                                                                                       | `sunny@example.com` -> `[REDACTED]`                                                                                                                                                                                                    |
-| `PARTIAL`      | Masks sensitive portions while preserving limited format context                                                                                                                   | `sunny@example.com` -> `s***@example.com`, `4111 1111 1111 1111` -> `XXXX-XXXX-XXXX-1111`, `2345 6789 0124` -> `XXXX XXXX 0124`, `192.168.1.10` -> `192.168.*.*`, `ABCPD1234F` -> `AB*******F`, `+91 98765 43210` -> `+** ***** *3210` |
-| `PSEUDONYMIZE` | Replaces normalized values with independent per-type counters (`EMAIL_01`, `CARD_01`, `AADHAAR_01`, `PAN_01`, `IPV4_01`, `PHONE_01`) scoped strictly to one sanitization operation | `sunny@example.com` & `SUNNY@example.com` -> `EMAIL_01`                                                                                                                                                                                |
-
----
-
-## 10. Web Worker Architecture
-
-- [piiWorker.ts](src/workers/piiWorker.ts) executes [processDetectionRequest](src/workers/workerMessageHandler.ts) off the main UI thread.
-- [workerClient.ts](src/workers/workerClient.ts) maintains one reusable worker instance, assigns monotonic `requestId` values, discards stale responses if the user edits text before a previous scan finishes, handles worker errors cleanly, and terminates the worker on unmount.
-- In test environments without `Worker` (`jsdom`), [usePiiDetectionWorker.ts](src/hooks/usePiiDetectionWorker.ts) runs an async microtask adapter executing the same message handler.
-
----
-
-## 11. Privacy Risk Meter Formula and Limitations
+- **Frontend (`src/App.tsx`, `src/components/`):** Clean single-page workbench rendered solely with React text nodes (zero `dangerouslySetInnerHTML`), strict system font stacks, WCAG AA contrast, `:focus-visible` outlines, and `prefers-reduced-motion` support.
+- **Detection Engine (`src/lib/detectors/`):**
+  - Independent regex extraction + boundary/checksum validators (`luhn.ts` for credit cards, `verhoeff.ts` for Aadhaar, Indian holder category checks for PAN, octet range/leading-zero checks for IPv4, RFC-lite checks for email, and Indian/E.164 rules for phone).
+  - Priority-ordered overlap resolution (`CREDIT_CARD > AADHAAR > PAN > IPV4 > EMAIL > PHONE`, longest match on ties, earliest start on equal length) in `src/lib/detectors/overlapResolver.ts` using coordinate compression and a `Uint8Array`-backed lazy segment tree (`IntervalOccupancyTree`) in $O(N \log N)$ time.
+- **Web Worker (`src/workers/`, `src/hooks/usePiiDetectionWorker.ts`):** Offloads scanning from the main thread and discards outdated results via monotonic `requestId` tracking; uses a microtask fallback when `Worker` is absent in `jsdom` tests.
+- **Redaction Engine (`src/lib/redaction/`):** Deterministic position-based replacement supporting `ignoredIds` without shifting offsets; exports pure `maskEntityValuePartially` for fast `PARTIAL` UI previews.
+- **Privacy Risk Calculation (`src/lib/risk/riskCalculator.ts`):**
 
 ```text
 Risk Score = round(100 * sum(severity of ignored detections) / sum(severity of all valid detections))
 ```
 
-- Returns `0` when there are no detections or all detections are redacted, and `100` when every detection is kept unchanged, clamped to `0–100`.
-- **Bands:** `0–25` (`Low Risk`), `26–65` (`Moderate Risk`), `66–100` (`High Risk`).
-- **Limitation:** Measures detected identifiers left completely unchanged; it is **not** a guarantee of anonymity, and partial masking may still leave contextual clues.
+- **Optional Compliance API (`api/summary.ts`):** Vercel Web Standard Fetch handler (`export default { fetch }`) with dynamic `await import("@google/genai")`, structured JSON status codes (`400`, `403`, `405`, `413`, `415`, `500`, `502`, `503`, `504`), and `Promise.race` timeout enforcement (`12,000 ms`).
 
 ---
 
-## 12. Audit Export Format
+## 5. Three Redaction Modes
 
-Both JSON (`cyloces-audit-report.json`) and RFC 4180-safe CSV (`cyloces-audit-report.csv`) exports contain **only** generation timestamp, redaction mode, total/redacted/kept counts, entity counts by type, and per-detection records (`id`, `type`, `start`, `end`, `REDACTED` or `KEPT`). Original text, raw PII values, snippets, pseudonym mappings, and filenames are never included.
-
----
-
-## 13. Privacy Architecture and Network Restrictions
-
-- Core sanitization (detection, redaction, risk scoring, file reading, and audit exports) executes 100% in browser memory with zero `localStorage`/`sessionStorage` usage for document content and zero `dangerouslySetInnerHTML`.
-- Production headers in [vercel.json](vercel.json) enforce `default-src 'self'`, `script-src 'self'`, `style-src 'self'`, `connect-src 'self'`, `worker-src 'self' blob:`, `object-src 'none'`, `frame-ancestors 'none'`, and `form-action 'self'`.
-- When the user **explicitly checks the consent box and clicks `Generate Summary`**, only aggregate `countsByType` and `riskScore` are sent via same-origin `POST /api/summary` to Google Gemini. Document text and raw PII are never sent and are rejected (`400`) by `api/summary.ts`.
+| Mode           | Behavior                                                         | Example (`alice@example.com` / `4111 1111 1111 1111`) |
+| -------------- | ---------------------------------------------------------------- | ----------------------------------------------------- |
+| `FULL`         | Replaces non-ignored matches with `[REDACTED]`                   | `[REDACTED]` / `[REDACTED]`                           |
+| `PARTIAL`      | Preserves bounded format structure while masking core characters | `a***@example.com` / `XXXX-XXXX-XXXX-1111`            |
+| `PSEUDONYMIZE` | Maps normalized matches to independent per-type session IDs      | `EMAIL_01` (same for `ALICE@example.com`) / `CARD_01` |
 
 ---
 
-## 14. Installation Instructions
+## 6. Local-First Processing & Privacy Boundaries
+
+- **Zero document egress:** Source text, `.txt`/`.csv` files, detections, raw entity values, and pseudonym tables stay strictly inside browser RAM (`localStorage` and `sessionStorage` are never used for document text).
+- **Strict CSP & Security Headers (`vercel.json`):** `default-src 'self'`, `script-src 'self'`, `style-src 'self'`, `connect-src 'self'`, `worker-src 'self' blob:`, `object-src 'none'`, `frame-ancestors 'none'`, `form-action 'self'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`.
+- **Same-origin & allowlist enforcement (`api/summary.ts`):** Enforces `POST` only, `application/json` strict media type, `Sec-Fetch-Site` cross-site blocking, `Origin` vs `Host` verification, streaming `1 KB` byte cap, and `validateComplianceRequest` rejecting unexpected fields such as `documentText`, `rawValues`, or `filename`.
+
+---
+
+## 7. Supported File Formats & Limits
+
+- **Supported inputs:** Plain text paste, drag-and-drop, or `.txt` / `.csv` local file selection.
+- **Upload limits (`src/lib/fileUtils.ts`):** Maximum `2 MB` (`2 * 1024 * 1024` bytes), non-empty UTF-8 text, allowed MIME types (`text/plain`, `text/csv`, `application/csv`, `application/vnd.ms-excel`, or empty browser MIME with valid extension), and binary NUL-byte (`\u0000`) rejection.
+- **Sanitized downloads:** Preserve source extension (`*.sanitized-<mode>.txt` or `.csv`) and strip unsafe CSV formula/delimiter artifacts from masked tokens.
+
+---
+
+## 8. Installation & Local Development
+
+Requires **Node.js `>= 22.0.0`** (CI targets Node `22`).
 
 ```bash
 git clone https://github.com/Sunny-29-blip/pw2-cycloces.git
 cd pw2-cycloces
 npm ci
-```
-
----
-
-## 15. Local Development
-
-```bash
 npm run dev
 ```
 
-For testing `/api/summary` locally, copy [.env.example](.env.example) to `.env`, set `GEMINI_API_KEY`, and run `vercel dev`.
+For local serverless API testing, copy `.env.example` to `.env`, set `GEMINI_API_KEY`, and run `vercel dev` (`npm run dev` serves the frontend only; core sanitization works without any backend or API key).
 
 ---
 
-## 16. Testing & Benchmark Commands
+## 9. Environment Variables & Secure Gemini Setup
+
+Configure only in server-side Vercel Project Settings (never use a `VITE_` prefix):
+
+| Variable         | Required                   | Default                 | Purpose                                                                |
+| ---------------- | -------------------------- | ----------------------- | ---------------------------------------------------------------------- |
+| `GEMINI_API_KEY` | Optional (AI summary only) | —                       | Server-side Google Gemini API key read exclusively in `api/summary.ts` |
+| `GEMINI_MODEL`   | No                         | `gemini-3.5-flash-lite` | Optional model override on the server                                  |
+
+If `GEMINI_API_KEY` is unset, `POST /api/summary` cleanly returns HTTP `503` JSON while all local sanitization, scoring, and export features continue operating normally.
+
+---
+
+### Benchmark Performance Summary (`npm run benchmark`)
+
+Measured synthetic PII-dense payloads (`scripts/benchmark.mjs`, before optimization vs after Prompt H segment-tree pass; logs zero raw PII):
+
+| Payload Size           | Baseline Overlap Resolver                 | Post-Optimization Overlap (`overlapMs`) | Post-Optimization Total (`totalMs`) |
+| ---------------------- | ----------------------------------------- | --------------------------------------- | ----------------------------------- |
+| `64 KB` (`65,536` B)   | `55.75 ms` (`2,912` detections)           | `12.25 ms` (`2,934` detections)         | `74.47 ms`                          |
+| `256 KB` (`262,144` B) | `895.52 ms` (`11,651` detections)         | `32.54 ms` (`11,737` detections)        | `202.43 ms`                         |
+| `1 MB` (`1,048,576` B) | —                                         | `125.86 ms` (`46,950` detections)       | `625.95 ms`                         |
+| `2 MB` (`2,097,152` B) | Timed out `> 40 s` (`~93,000` detections) | `201.96 ms` (`93,902` detections)       | `1488.95 ms`                        |
+
+---
+
+## 10. Testing & Benchmark Commands
 
 ```bash
 npm ci
@@ -169,51 +140,23 @@ npm run benchmark
 npm audit --audit-level=high
 ```
 
-All Vitest unit and component suites run non-watch in `jsdom` using synthetic fixtures and mocked/dynamic `@google/genai` SDK harnesses. `npm run benchmark` evaluates `64 KB`, `256 KB`, `1 MB`, and `2 MB` synthetic PII-dense payloads without logging raw document text.
+Vitest (`npm test`) runs all 21 unit, integration (dynamic `@google/genai` SDK mock), and UI component suites in `jsdom`; `.github/workflows/ci.yml` executes `npm ci`, ESLint, TypeScript typecheck, Prettier check, Vitest, Vite production build, and `npm audit --audit-level=high` on Node `22`.
 
 ---
 
-## 17. Vercel Deployment & Edge Security Controls
+## 11. Vercel Deployment Instructions & Manual Checks
 
-1. Import the repository into Vercel (`framework: vite`, build command `npm run build`, output directory `dist`).
-2. `vercel.json` automatically applies production CSP and security headers, while `api/summary.ts` deploys as a Node.js serverless function.
-3. Core sanitization works with zero environment variables configured.
-4. **External Rate Limiting & Quota Protection:** Ephemeral serverless instances do not share in-memory counters; configure **Vercel WAF Rate Limiting** (and Google Cloud API quota caps / spending alerts on `GEMINI_API_KEY`) externally to protect `/api/summary` against abuse or quota exhaustion. `api/summary.ts` enforces same-origin validation (`Host` + `Origin` + `Sec-Fetch-Site`), strict `application/json` `Content-Type`, 1 KB streaming byte caps, strict allowlist validation, and deterministic `Promise.race` timeouts.
-
----
-
-## 18. Environment Variables
-
-Configure only in server-side Vercel Environment Variables (never prefix with `VITE_`):
-
-| Variable         | Required                       | Default                 | Description                                                            |
-| ---------------- | ------------------------------ | ----------------------- | ---------------------------------------------------------------------- |
-| `GEMINI_API_KEY` | Optional (for AI summary only) | —                       | Server-side Google Gemini API key used exclusively in `api/summary.ts` |
-| `GEMINI_MODEL`   | No                             | `gemini-3.5-flash-lite` | Configurable Gemini model identifier                                   |
+1. Import `pw2-cycloces` into Vercel with Framework Preset `Vite`, Build Command `npm run build`, Output Directory `dist`, and Node.js `22.x`.
+2. `vercel.json` automatically configures production CSP and security headers for static assets while Vercel deploys `api/summary.ts` at `/api/summary`.
+3. **Manual Dashboard Checks Required After Deploying:**
+   - Configure **Vercel WAF Rate Limiting** on `/api/summary` and **Google Cloud API quota caps** on `GEMINI_API_KEY` (serverless instances are stateless, so in-memory rate limits are not shared across instances).
+   - Verify `GEMINI_API_KEY` is scoped to server-side environment variables only (not `VITE_*`), and smoke-test a consented `Generate Summary` click on production if optional AI summary is enabled.
 
 ---
 
-## 19. Requirement-to-File Mapping
+## 12. Known Limitations & Future Improvements
 
-| Requirement                                          | Status      | File(s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Project setup, strict TS, lint, CI, CSP              | Implemented | [package.json](package.json), [tsconfig.app.json](tsconfig.app.json), [tsconfig.node.json](tsconfig.node.json), [eslint.config.js](eslint.config.js), [vercel.json](vercel.json), [.github/workflows/ci.yml](.github/workflows/ci.yml)                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Detection data model & constants                     | Implemented | [src/types/detection.ts](src/types/detection.ts), [src/lib/detectors/constants.ts](src/lib/detectors/constants.ts)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Luhn & Verhoeff checksums                            | Implemented | [src/lib/detectors/luhn.ts](src/lib/detectors/luhn.ts), [src/lib/detectors/verhoeff.ts](src/lib/detectors/verhoeff.ts)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 6 PII detectors & overlap resolver                   | Implemented | [src/lib/detectors/emailDetector.ts](src/lib/detectors/emailDetector.ts), [src/lib/detectors/phoneDetector.ts](src/lib/detectors/phoneDetector.ts), [src/lib/detectors/ipv4Detector.ts](src/lib/detectors/ipv4Detector.ts), [src/lib/detectors/panDetector.ts](src/lib/detectors/panDetector.ts), [src/lib/detectors/aadhaarDetector.ts](src/lib/detectors/aadhaarDetector.ts), [src/lib/detectors/creditCardDetector.ts](src/lib/detectors/creditCardDetector.ts), [src/lib/detectors/overlapResolver.ts](src/lib/detectors/overlapResolver.ts), [src/lib/detectors/index.ts](src/lib/detectors/index.ts)                             |
-| Redaction engine (`FULL`, `PARTIAL`, `PSEUDONYMIZE`) | Implemented | [src/types/redaction.ts](src/types/redaction.ts), [src/lib/redaction/fullMask.ts](src/lib/redaction/fullMask.ts), [src/lib/redaction/partialMask.ts](src/lib/redaction/partialMask.ts), [src/lib/redaction/pseudonymize.ts](src/lib/redaction/pseudonymize.ts), [src/lib/redaction/shared.ts](src/lib/redaction/shared.ts), [src/lib/redaction/index.ts](src/lib/redaction/index.ts)                                                                                                                                                                                                                                                   |
-| Web Worker & React hook                              | Implemented | [src/types/worker.ts](src/types/worker.ts), [src/workers/piiWorker.ts](src/workers/piiWorker.ts), [src/workers/workerMessageHandler.ts](src/workers/workerMessageHandler.ts), [src/workers/workerClient.ts](src/workers/workerClient.ts), [src/hooks/usePiiDetectionWorker.ts](src/hooks/usePiiDetectionWorker.ts)                                                                                                                                                                                                                                                                                                                     |
-| Risk Meter calculation & UI                          | Implemented | [src/types/risk.ts](src/types/risk.ts), [src/lib/risk/riskCalculator.ts](src/lib/risk/riskCalculator.ts), [src/components/PrivacyRiskMeter.tsx](src/components/PrivacyRiskMeter.tsx)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Audit export (JSON/CSV, PII-free)                    | Implemented | [src/types/audit.ts](src/types/audit.ts), [src/lib/audit/auditExport.ts](src/lib/audit/auditExport.ts), [src/components/AuditExportBar.tsx](src/components/AuditExportBar.tsx)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Interactive review UI, sample, file I/O              | Implemented | [src/App.tsx](src/App.tsx), [src/lib/sampleDocument.ts](src/lib/sampleDocument.ts), [src/lib/fileUtils.ts](src/lib/fileUtils.ts), [src/lib/documentSegments.ts](src/lib/documentSegments.ts), [src/components/Header.tsx](src/components/Header.tsx), [src/components/InputPanel.tsx](src/components/InputPanel.tsx), [src/components/ModeSelector.tsx](src/components/ModeSelector.tsx), [src/components/DetectionSummary.tsx](src/components/DetectionSummary.tsx), [src/components/SideBySideWorkspace.tsx](src/components/SideBySideWorkspace.tsx), [src/components/DetectionInspector.tsx](src/components/DetectionInspector.tsx) |
-| Optional Gemini summary & validation                 | Implemented | [api/summary.ts](api/summary.ts), [src/types/compliance.ts](src/types/compliance.ts), [src/lib/complianceValidation.ts](src/lib/complianceValidation.ts), [src/lib/complianceClient.ts](src/lib/complianceClient.ts), [src/components/AiComplianceSummary.tsx](src/components/AiComplianceSummary.tsx)                                                                                                                                                                                                                                                                                                                                 |
-
----
-
-## 20. Known Limitations
-
-- Deterministic pattern detection cannot guarantee 100% recall or precision across arbitrary unstructured prose (e.g., unprefixed non-Indian phone numbers, lowercase PAN strings, or contextual non-pattern PII such as free-form person names and street addresses).
-- Checksum validation verifies structural integrity, not real-world issuance.
-- Overlap resolution runs in `O(N log N)` via coordinate compression and an interval-occupancy segment tree (`src/lib/detectors/overlapResolver.ts`), while high-density documents (`> 250` detections) paginate `SideBySideWorkspace` (100 detections per section) and `DetectionInspector` (50 detections per page) while keeping full-document downloads and audit exports complete.
-- The Privacy Risk Meter quantifies unredacted severity weight and does not constitute a formal anonymity or legal/regulatory compliance certification.
-- Automated verification runs in Vitest (`jsdom`) and Vite production builds; end-to-end live browser Web Worker and live Vercel/Gemini deployment behavior should be smoke-tested in a live browser after deploying.
+- **Deterministic Scope Limitations:** Rule-based detection does not flag unprefixed international numbers lacking `+`, lowercase PAN strings, or contextual unstructured PII (person names, street addresses). Checksums (Luhn/Verhoeff) verify structural math, not official issuance.
+- **Risk Score Scope:** Quantifies severity-weighted completely unredacted tokens, not formal k-anonymity or legal compliance; `PARTIAL` masking can still reveal domain or suffix context.
+- **Test Environment Boundaries:** Automated tests run primarily in `jsdom`, complemented by headless Chromium smoke verification of `vite preview` and production HTTP `GET` header/method checks.
+- **Potential Future Improvements:** User-selectable custom regex rules, client-side PDF/DOCX text extraction via offline WASM parsers, and Playwright CI integration in GitHub Actions.
