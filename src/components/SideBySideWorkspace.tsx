@@ -49,14 +49,13 @@ export function SideBySideWorkspace({
         </div>
 
         <div
-          role="tablist"
+          role="group"
           aria-label="Document view switcher"
           className="inline-flex rounded-lg border border-[#d2d2d7] bg-[#f5f5f7] p-1 lg:hidden dark:border-[#2d313a] dark:bg-[#1c1f26]"
         >
           <button
             type="button"
-            role="tab"
-            aria-selected={mobilePane === "original"}
+            aria-pressed={mobilePane === "original"}
             onClick={() => setMobilePane("original")}
             className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
               mobilePane === "original"
@@ -68,8 +67,7 @@ export function SideBySideWorkspace({
           </button>
           <button
             type="button"
-            role="tab"
-            aria-selected={mobilePane === "sanitized"}
+            aria-pressed={mobilePane === "sanitized"}
             onClick={() => setMobilePane("sanitized")}
             className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
               mobilePane === "sanitized"

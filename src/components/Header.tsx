@@ -8,7 +8,7 @@ export interface HeaderProps {
 }
 
 /**
- * Top application bar presenting CYLOCES branding, privacy status, and theme switcher.
+ * Top application bar presenting CYLOCES branding, accurate local-first privacy status, and theme switcher.
  */
 export function Header({ theme, onToggleTheme }: HeaderProps): ReactElement {
   const isDark = theme === "dark";
@@ -23,14 +23,14 @@ export function Header({ theme, onToggleTheme }: HeaderProps): ReactElement {
             </h1>
             <span
               className="inline-flex items-center gap-2 rounded-full border border-[#b7dfc4] bg-[#edf8f0] px-3 py-1 text-xs font-medium text-[#125b2d] dark:border-[#22543d] dark:bg-[#132a1e] dark:text-[#86efac]"
-              aria-label="Privacy status: all processing happens locally in your browser"
+              aria-label="Privacy status: document text and raw identifiers remain in your browser during sanitization; optional AI summary sends aggregate counts only upon explicit consent"
             >
               <span className="h-2 w-2 rounded-full bg-[#1a7f37] dark:bg-[#4ade80]" aria-hidden />
-              Local-First · Browser Only
+              Local-First Sanitization · Opt-In AI Metadata
             </span>
           </div>
           <p className="text-sm text-[#515154] dark:text-[#a1a1aa]">
-            Every redaction is explainable, reviewable, and never leaves your browser.
+            Document text and raw identifiers remain in your browser during sanitization.
           </p>
         </div>
 

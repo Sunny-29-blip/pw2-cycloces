@@ -48,27 +48,28 @@ export function DetectionInspector({
         </p>
       ) : (
         <div className="mt-4 space-y-4">
-          <div className="flex flex-wrap gap-2" role="list" aria-label="Detected entities">
+          <ul className="flex flex-wrap gap-2" aria-label="Detected entities">
             {detections.map((item, index) => {
               const isSelected = item.id === activeDetection.id;
               const isKept = ignoredIds.has(item.id);
               return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onSelectDetection(item.id)}
-                  aria-current={isSelected ? "true" : undefined}
-                  className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                    isSelected
-                      ? "border-[#0066cc] bg-[#0066cc] text-white dark:border-[#4da3ff] dark:bg-[#4da3ff] dark:text-[#0b0c0e]"
-                      : "border-[#d2d2d7] bg-[#f9f9fb] text-[#1d1d1f] hover:bg-[#ececf1] dark:border-[#2d313a] dark:bg-[#1c1f26] dark:text-[#f5f5f7] dark:hover:bg-[#262a33]"
-                  }`}
-                >
-                  #{index + 1} {item.type} ({isKept ? "Kept" : "Redacted"})
-                </button>
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectDetection(item.id)}
+                    aria-current={isSelected ? "true" : undefined}
+                    className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      isSelected
+                        ? "border-[#0066cc] bg-[#0066cc] text-white dark:border-[#4da3ff] dark:bg-[#4da3ff] dark:text-[#0b0c0e]"
+                        : "border-[#d2d2d7] bg-[#f9f9fb] text-[#1d1d1f] hover:bg-[#ececf1] dark:border-[#2d313a] dark:bg-[#1c1f26] dark:text-[#f5f5f7] dark:hover:bg-[#262a33]"
+                    }`}
+                  >
+                    #{index + 1} {item.type} ({isKept ? "Kept" : "Redacted"})
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
 
           <div className="rounded-lg border border-[#e5e5ea] bg-[#f9f9fb] p-4 dark:border-[#2d313a] dark:bg-[#1c1f26]">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

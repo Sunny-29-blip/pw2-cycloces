@@ -1,4 +1,5 @@
 import { type ReactElement, useCallback, useEffect, useMemo, useState } from "react";
+import { AiComplianceSummary } from "./components/AiComplianceSummary";
 import { AuditExportBar } from "./components/AuditExportBar";
 import { DetectionInspector } from "./components/DetectionInspector";
 import { DetectionSummary } from "./components/DetectionSummary";
@@ -9,6 +10,7 @@ import { PrivacyRiskMeter } from "./components/PrivacyRiskMeter";
 import { SideBySideWorkspace } from "./components/SideBySideWorkspace";
 import { usePiiDetectionWorker } from "./hooks/usePiiDetectionWorker";
 import { buildAuditReport, serializeAuditReportCsv, serializeAuditReportJson } from "./lib/audit";
+import { buildComplianceRequestPayload } from "./lib/complianceValidation";
 import { buildDocumentViewSegments } from "./lib/documentSegments";
 import {
   buildSanitizedDownloadMeta,
@@ -24,7 +26,7 @@ import type { RedactionMode } from "./types/redaction";
 
 /**
  * Root CYLOCES application coordinating local Web Worker detection, live redaction,
- * explainability inspection, risk scoring, and privacy-safe audit exports.
+ * explainability inspection, risk scoring, privacy-safe audit exports, and opt-in AI summary.
  */
 export function App(): ReactElement {
   const [theme, setTheme] = useState<ThemeMode>("light");
@@ -70,6 +72,12 @@ export function App(): ReactElement {
           setFileError("The selected file contains no readable text.");
           return;
         }
+        if (content.includes("\u0000")) {
+          setFileError(
+            "Binary file content is not supported. Please select a plain text or CSV file.",
+          );
+          return;
+        }
         applyDocumentChange(content, file.name, validation.extension);
       } catch {
         setFileError("Unable to read the selected local file.");
@@ -108,6 +116,11 @@ export function App(): ReactElement {
   const riskAssessment = useMemo(
     () => calculatePrivacyRisk(detections, ignoredIds),
     [detections, ignoredIds],
+  );
+
+  const compliancePayload = useMemo(
+    () => buildComplianceRequestPayload(detections, riskAssessment.score),
+    [detections, riskAssessment.score],
   );
 
   const { originalSegments, sanitizedSegments } = useMemo(
@@ -203,6 +216,8 @@ export function App(): ReactElement {
           onDownloadAuditJson={handleDownloadAuditJson}
           onDownloadAuditCsv={handleDownloadAuditCsv}
         />
+
+        <AiComplianceSummary payload={compliancePayload} />
       </main>
     </div>
   );

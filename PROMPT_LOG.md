@@ -1,53 +1,50 @@
 # Prompt Log
 
-This file records the actual prompts used during the development of CYLOCES, along with honest, verifiable records of what each phase implemented.
+This file records the actual development prompts executed for CYLOCES along with verifiable implementation outcomes.
 
 ---
 
 ## Prompt A: Project Foundation
 
 - **Status:** Completed
-- **Objective:** Establish a clean, strict, deployable Vite + React + TypeScript + Tailwind CSS + Vitest + ESLint + Prettier project foundation with Vercel static deployment, strict Content Security Policy headers, CI workflow, `AGENTS.md`, and `README.md`.
-- **Outcome:** Scaffolded configuration, directory layout, CSP headers, CI pipeline, and baseline test; verified via `lint`, `typecheck`, `test`, `build`, and `dev`.
+- **Summary:** Initialized Vite, React, TypeScript (strict mode), Tailwind CSS, Vitest, ESLint, Prettier, GitHub Actions CI, `AGENTS.md`, `README.md`, `.env.example`, `.gitignore`, and `vercel.json` with strict CSP headers. No detection, redaction, or AI logic was included in this initialization phase.
 
 ---
 
-## Prompt B: Detection and Explainability
+## Prompt B: PII Detection Engine and Explainability
 
 - **Status:** Completed
-- **Objective:** Implement deterministic client-side PII detectors for `EMAIL`, `PHONE`, `IPV4`, `PAN`, `AADHAAR`, and `CREDIT_CARD` with reusable Luhn and Verhoeff checksum validation, explainability metadata (`confidence`, `reasons`, `severity`), deterministic IDs, and priority-ordered overlap resolution.
-- **Outcome:** Created `src/types/detection.ts` and modular detectors under `src/lib/detectors/` backed by synthetic Vitest suites.
+- **Summary:** Implemented `src/types/detection.ts` and six modular client-side detectors under `src/lib/detectors/` (`EMAIL`, `PHONE`, `IPV4`, `PAN`, `AADHAAR`, `CREDIT_CARD`) with separate Luhn and Verhoeff checksum functions, deterministic IDs, confidence/severity rules, reason strings, and priority-ordered overlap resolution.
 
 ---
 
 ## Prompt C: Redaction Engine
 
 - **Status:** Completed
-- **Objective:** Implement `FULL`, `PARTIAL`, and `PSEUDONYMIZE` redaction strategies operating safely on validated `[start, end)` positions with `ignoredIds` support, session-local normalized counters, and CSV/newline preservation.
-- **Outcome:** Created `src/types/redaction.ts` and modular strategies under `src/lib/redaction/` with unit tests covering all three modes, ignored IDs, and CSV/CRLF integrity.
+- **Summary:** Implemented `src/types/redaction.ts` and three position-based redaction strategies under `src/lib/redaction/` (`FULL`, `PARTIAL`, `PSEUDONYMIZE`) supporting `ignoredIds`, session-local normalized counters, and CSV/CRLF preservation.
 
 ---
 
-## Prompt D: CYLOCES Application (Frontend, Web Worker, Risk Meter, and Privacy Audit)
+## Prompt D: CYLOCES Application, Web Worker, Risk Meter, and Audit Exports
 
 - **Status:** Completed
-- **Prompt Summary:** Build the complete, Apple-inspired, accessible CYLOCES single-page application reusing existing detection and redaction engines without rewriting core logic:
-  - Light/dark theme, generous whitespace, 8px spacing grid, system font stack, WCAG AA contrast, keyboard accessibility, and reduced-motion support.
-  - Dedicated Web Worker (`src/workers/`) with typed messages, loading state, error handling, stale-response protection, and unmount termination.
-  - Side-by-side original and live sanitized views rendered solely via React text nodes (no `dangerouslySetInnerHTML`), with click-to-toggle Keep/Redact controls and explainable detection inspector.
-  - Severity-weighted `0–100` Privacy Risk Meter (`src/lib/risk/`).
-  - Local `.txt`/`.csv` upload (2 MB cap), synthetic noisy sample loader, sanitized file download, and PII-free JSON/CSV audit report exports (`src/lib/audit/`).
+- **Summary:** Built the full CYLOCES frontend (`src/components/`, `src/App.tsx`), dedicated module Web Worker (`src/workers/piiWorker.ts`, `src/workers/workerClient.ts`, `src/hooks/usePiiDetectionWorker.ts`) with stale-response cancellation, severity-weighted Privacy Risk Meter (`src/lib/risk/`), PII-free JSON/CSV audit exports (`src/lib/audit/`), local `.txt`/`.csv` file validation/download (`src/lib/fileUtils.ts`), and synthetic noisy sample fixture (`src/lib/sampleDocument.ts`). Also resolved the follow-up Vercel `WorkerLike.onerror` `ErrorEvent` type hotfix.
 
 ---
 
-## Prompt E: Optional Gemini Integration
+## Prompt E: Optional Gemini AI Compliance Summary
 
-- **Status:** Pending
-- **Notes:** Reserved for recording the actual Prompt E instructions and verified implementation outcomes when executed.
+- **Status:** Completed
+- **Summary:** Added an opt-in, consent-gated AI Compliance Summary (`src/components/AiComplianceSummary.tsx`, `src/lib/complianceClient.ts`, `src/lib/complianceValidation.ts`, `api/summary.ts`) using `@google/genai`, strict allowlist validation (`countsByType` + `riskScore` only), `GEMINI_API_KEY`/`GEMINI_MODEL` server-only env vars, updated privacy wording, and mocked Gemini/UI unit tests.
 
 ---
 
-## Prompt F: Hardening and Documentation
+## Prompt F: Final Engineering Hardening
 
-- **Status:** Pending
-- **Notes:** Reserved for recording the actual Prompt F instructions and verified implementation outcomes when executed.
+- **Status:** Completed
+- **Summary:** Performed full security, accessibility, code quality, worker, and documentation audit:
+  - Fixed ARIA semantics in `DetectionInspector.tsx` (`<ul>`/`<li>` instead of `role="list"` around direct buttons) and `SideBySideWorkspace.tsx` (`role="group"` + `aria-pressed` mobile switcher).
+  - Updated `AiComplianceSummary.tsx` to clear stale errors as well as stale summaries when document metrics change.
+  - Hardened `api/summary.ts` with chunked streaming body byte-cap enforcement and `http:`/`https:` origin protocol verification.
+  - Added NUL-byte binary file rejection in `src/App.tsx` and `> 2 MB` upload regression test in `tests/app.test.tsx`.
+  - Finalized `README.md` (all 20 sections) and `PROMPT_LOG.md`, and ran `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npx prettier --check .`.

@@ -3,15 +3,17 @@ import { describe, expect, it } from "vitest";
 import { App } from "../src/App";
 
 describe("CYLOCES Application", () => {
-  it("renders CYLOCES branding, tagline, and theme switcher", () => {
+  it("renders CYLOCES branding, accurate privacy disclosure, and theme switcher", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "CYLOCES" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Every redaction is explainable, reviewable, and never leaves your browser.",
+        "Document text and raw identifiers remain in your browser during sanitization.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI Compliance Summary" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate Summary" })).toBeDisabled();
 
     const themeButton = screen.getByRole("button", { name: "Switch to Dark Theme" });
     fireEvent.click(themeButton);
@@ -125,6 +127,14 @@ describe("CYLOCES Application", () => {
     const emptyTxt = new File([""], "empty.txt", { type: "text/plain" });
     fireEvent.change(fileInput, { target: { files: [emptyTxt] } });
     expect(await screen.findByRole("alert")).toHaveTextContent("The selected file is empty.");
+
+    // Reject oversized file (> 2 MB)
+    const oversizedPayload = new Uint8Array(2 * 1024 * 1024 + 1);
+    const oversizedTxt = new File([oversizedPayload], "huge.txt", { type: "text/plain" });
+    fireEvent.change(fileInput, { target: { files: [oversizedTxt] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "File exceeds the 2 MB local processing limit.",
+    );
 
     // Accept valid .csv file
     const csvContent = 'name,email\n"Alice","alice@example.com"';
