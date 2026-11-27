@@ -8,10 +8,12 @@ import type {
   ComplianceSummaryResponse,
 } from "../src/types/compliance.js";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
-export const SUMMARY_TIMEOUT_MS = 12_000;
-export const SUMMARY_DISCLAIMER =
+const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+const SUMMARY_TIMEOUT_MS = 12_000;
+const SUMMARY_DISCLAIMER =
   "Informational summary generated solely from aggregate entity counts and the privacy risk score. It is not a legal compliance certification or guarantee of anonymity.";
+
+export { DEFAULT_GEMINI_MODEL };
 
 const SYSTEM_INSTRUCTION = [
   "You are a privacy risk analyst summarizing aggregate PII sanitization telemetry.",
@@ -53,6 +55,11 @@ function jsonResponse(
 }
 
 function isAllowedSameOrigin(request: Request): boolean {
+  const secFetchSite = request.headers.get("sec-fetch-site")?.trim().toLowerCase();
+  if (secFetchSite === "cross-site") {
+    return false;
+  }
+
   const originHeader = request.headers.get("origin");
   if (!originHeader) {
     return true;
@@ -63,10 +70,13 @@ function isAllowedSameOrigin(request: Request): boolean {
     if (parsedOrigin.protocol !== "https:" && parsedOrigin.protocol !== "http:") {
       return false;
     }
-    const forwardedHost = request.headers.get("x-forwarded-host");
-    const hostHeader = forwardedHost ?? request.headers.get("host");
-    const requestHost = hostHeader ?? new URL(request.url).host;
-    return parsedOrigin.host === requestHost;
+    const rawHostHeader = request.headers.get("host")?.split(",", 1)[0]?.trim().toLowerCase();
+    const requestUrlHost = new URL(request.url).host.toLowerCase();
+    const requestHost = rawHostHeader && rawHostHeader.length > 0 ? rawHostHeader : requestUrlHost;
+    if (rawHostHeader && rawHostHeader !== requestUrlHost) {
+      return false;
+    }
+    return parsedOrigin.host.toLowerCase() === requestHost;
   } catch {
     return false;
   }
@@ -149,9 +159,33 @@ async function createSdkGenerator(apiKey: string): Promise<SummaryGenerator> {
           abortSignal,
         },
       });
-      return (response.text ?? "").trim();
+      return typeof response?.text === "string" ? response.text.trim() : "";
     },
   };
+}
+
+function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new Error("Compliance summary request timed out."));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(new Error("Compliance summary request timed out."));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 async function executeSummaryRequest(
@@ -173,8 +207,9 @@ async function executeSummaryRequest(
     );
   }
 
-  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
-  if (!contentType.startsWith("application/json")) {
+  const rawContentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  const mediaType = rawContentType.split(";", 1)[0]?.trim() ?? "";
+  if (mediaType !== "application/json") {
     return jsonResponse(
       { error: "Content-Type must be application/json.", code: "UNSUPPORTED_MEDIA_TYPE" },
       415,
@@ -219,13 +254,18 @@ async function executeSummaryRequest(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const generator = await (options.createGenerator ?? createSdkGenerator)(apiKey);
-    const rawSummary = await generator.generate({
-      model,
-      prompt: buildCompliancePrompt(validation.data),
-      systemInstruction: SYSTEM_INSTRUCTION,
-      abortSignal: controller.signal,
-    });
+    const rawSummary = await raceWithAbort(
+      (async () => {
+        const generator = await (options.createGenerator ?? createSdkGenerator)(apiKey);
+        return generator.generate({
+          model,
+          prompt: buildCompliancePrompt(validation.data),
+          systemInstruction: SYSTEM_INSTRUCTION,
+          abortSignal: controller.signal,
+        });
+      })(),
+      controller.signal,
+    );
     const summaryText = rawSummary.trim();
 
     if (summaryText.length === 0) {

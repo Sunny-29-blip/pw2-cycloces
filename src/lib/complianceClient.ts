@@ -12,7 +12,7 @@ export type ComplianceClientOutcome =
   | { readonly ok: true; readonly data: ComplianceSummaryResponse }
   | {
       readonly ok: false;
-      readonly errorType: "CONFIGURATION_ERROR" | "NETWORK_ERROR" | "API_ERROR";
+      readonly errorType: "CONFIGURATION_ERROR" | "NETWORK_ERROR" | "API_ERROR" | "CANCELLED";
       readonly message: string;
     };
 
@@ -71,6 +71,7 @@ function formatNonJsonHttpError(status: number): {
 export async function requestComplianceSummary(
   payload: ComplianceSummaryRequest,
   fetchFn: typeof fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<ComplianceClientOutcome> {
   const validation = validateComplianceRequest(payload);
   if (!validation.ok) {
@@ -89,8 +90,16 @@ export async function requestComplianceSummary(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(validation.data),
+      signal,
     });
-  } catch {
+  } catch (error: unknown) {
+    if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+      return {
+        ok: false,
+        errorType: "CANCELLED",
+        message: "Compliance summary request cancelled.",
+      };
+    }
     return {
       ok: false,
       errorType: "NETWORK_ERROR",

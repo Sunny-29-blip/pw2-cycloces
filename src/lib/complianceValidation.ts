@@ -2,10 +2,7 @@ import { ENTITY_PRIORITY_ORDER } from "./detectors/constants.js";
 import type { ComplianceSummaryRequest } from "../types/compliance.js";
 import type { Detection, EntityType } from "../types/detection.js";
 
-/**
- * Maximum count allowed per entity type in aggregate compliance requests.
- */
-export const MAX_ENTITY_COUNT = 1_000_000;
+const MAX_ENTITY_COUNT = 1_000_000;
 
 /**
  * Maximum JSON request body size accepted by the compliance summary endpoint (1 KB).

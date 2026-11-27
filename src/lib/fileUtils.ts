@@ -1,9 +1,6 @@
 import type { RedactionMode } from "../types/redaction";
 
-/**
- * Maximum permitted client-side file upload size (2 MB).
- */
-export const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
+const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
 
 /**
  * Supported upload file extensions.

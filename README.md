@@ -156,25 +156,29 @@ For testing `/api/summary` locally, copy [.env.example](.env.example) to `.env`,
 
 ---
 
-## 16. Testing Instructions
+## 16. Testing & Benchmark Commands
 
 ```bash
+npm ci
 npm run lint
 npm run typecheck
 npm test
 npm run build
 npx prettier --check .
+npm run benchmark
+npm audit --audit-level=high
 ```
 
-All Vitest unit and component suites run non-watch in `jsdom` using synthetic fixtures and mocked Gemini/worker harnesses.
+All Vitest unit and component suites run non-watch in `jsdom` using synthetic fixtures and mocked/dynamic `@google/genai` SDK harnesses. `npm run benchmark` evaluates `64 KB`, `256 KB`, `1 MB`, and `2 MB` synthetic PII-dense payloads without logging raw document text.
 
 ---
 
-## 17. Vercel Deployment
+## 17. Vercel Deployment & Edge Security Controls
 
 1. Import the repository into Vercel (`framework: vite`, build command `npm run build`, output directory `dist`).
 2. `vercel.json` automatically applies production CSP and security headers, while `api/summary.ts` deploys as a Node.js serverless function.
 3. Core sanitization works with zero environment variables configured.
+4. **External Rate Limiting & Quota Protection:** Ephemeral serverless instances do not share in-memory counters; configure **Vercel WAF Rate Limiting** (and Google Cloud API quota caps / spending alerts on `GEMINI_API_KEY`) externally to protect `/api/summary` against abuse or quota exhaustion. `api/summary.ts` enforces same-origin validation (`Host` + `Origin` + `Sec-Fetch-Site`), strict `application/json` `Content-Type`, 1 KB streaming byte caps, strict allowlist validation, and deterministic `Promise.race` timeouts.
 
 ---
 
@@ -210,5 +214,6 @@ Configure only in server-side Vercel Environment Variables (never prefix with `V
 
 - Deterministic pattern detection cannot guarantee 100% recall or precision across arbitrary unstructured prose (e.g., unprefixed non-Indian phone numbers, lowercase PAN strings, or contextual non-pattern PII such as free-form person names and street addresses).
 - Checksum validation verifies structural integrity, not real-world issuance.
+- Overlap resolution runs in `O(N log N)` via coordinate compression and an interval-occupancy segment tree (`src/lib/detectors/overlapResolver.ts`), while high-density documents (`> 250` detections) paginate `SideBySideWorkspace` (100 detections per section) and `DetectionInspector` (50 detections per page) while keeping full-document downloads and audit exports complete.
 - The Privacy Risk Meter quantifies unredacted severity weight and does not constitute a formal anonymity or legal/regulatory compliance certification.
 - Automated verification runs in Vitest (`jsdom`) and Vite production builds; end-to-end live browser Web Worker and live Vercel/Gemini deployment behavior should be smoke-tested in a live browser after deploying.

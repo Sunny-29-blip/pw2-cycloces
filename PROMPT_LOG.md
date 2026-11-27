@@ -48,3 +48,14 @@ This file records the actual development prompts executed for CYLOCES along with
   - Hardened `api/summary.ts` with chunked streaming body byte-cap enforcement and `http:`/`https:` origin protocol verification.
   - Added NUL-byte binary file rejection in `src/App.tsx` and `> 2 MB` upload regression test in `tests/app.test.tsx`.
   - Finalized `README.md` (all 20 sections) and `PROMPT_LOG.md`, and ran `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npx prettier --check .`.
+
+---
+
+## Prompt G–I: Codebase Audit, High-Density Optimization & Production Reliability
+
+- **Status:** Completed
+- **Summary:**
+  - Replaced the `O(N²)` overlap scan in `src/lib/detectors/overlapResolver.ts` with `O(N log N)` coordinate compression and a `Uint8Array`-backed segment tree (`IntervalOccupancyTree`), verified against an `O(N²)` reference oracle across 2,000 randomized differential trials.
+  - Added pure per-entity `maskEntityValuePartially` fast-path for `PARTIAL` workspace previews (`src/lib/redaction/partialMask.ts`, `src/lib/documentSegments.ts`), 50-item pagination in `DetectionInspector.tsx`, and automatic >250-detection section pagination in `SideBySideWorkspace.tsx` while keeping full-document downloads and audit exports complete.
+  - Hardened `api/summary.ts` (removed blind trust in `x-forwarded-host`, added `Sec-Fetch-Site: cross-site` rejection, exact `application/json` media-type matching, `Promise.race` timeout guarantee, and nullish SDK text guard) and added request cancellation (`AbortSignal` + Cancel control) in `src/lib/complianceClient.ts` and `src/components/AiComplianceSummary.tsx`.
+  - Removed verified unused internal exports/duplicate `default` App export surfaced by Knip, updated `.github/workflows/ci.yml` with Prettier check and `npm audit --audit-level=high`, added reproducible `npm run benchmark` (`scripts/benchmark.mjs`), added `@google/genai` dynamic-import integration tests (`tests/summarySdkIntegration.test.ts`), and verified in Vitest (`jsdom`), production Chrome smoke tests, and live Vercel smoke checks.

@@ -1,4 +1,4 @@
-import { type ReactElement, useId, useMemo, useState } from "react";
+import { type ReactElement, useEffect, useId, useMemo, useRef, useState } from "react";
 import { requestComplianceSummary } from "../lib/complianceClient";
 import { ENTITY_PRIORITY_ORDER } from "../lib/detectors";
 import type { ComplianceSummaryRequest, ComplianceSummaryResponse } from "../types/compliance";
@@ -39,6 +39,7 @@ export function AiComplianceSummary({ payload, fetchFn }: AiComplianceSummaryPro
   const [lastPayloadSignature, setLastPayloadSignature] = useState<string>(() =>
     JSON.stringify(payload),
   );
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const payloadSignature = useMemo(() => JSON.stringify(payload), [payload]);
   const effectiveStatus: SummaryStatus =
@@ -48,17 +49,39 @@ export function AiComplianceSummary({ payload, fetchFn }: AiComplianceSummaryPro
 
   const isLoading = effectiveStatus.kind === "loading";
 
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  const handleCancel = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setStatus({ kind: "idle" });
+  };
+
   const handleGenerate = async () => {
     if (!hasConsented || isLoading) {
       return;
     }
 
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLastPayloadSignature(payloadSignature);
     setStatus({ kind: "loading" });
 
-    const outcome = await requestComplianceSummary(payload, fetchFn);
+    const outcome = await requestComplianceSummary(payload, fetchFn, controller.signal);
+    if (abortControllerRef.current === controller) {
+      abortControllerRef.current = null;
+    }
+
     if (outcome.ok) {
       setStatus({ kind: "success", data: outcome.data });
+    } else if (outcome.errorType === "CANCELLED") {
+      setStatus({ kind: "idle" });
     } else {
       setStatus({
         kind: "error",
@@ -131,16 +154,27 @@ export function AiComplianceSummary({ payload, fetchFn }: AiComplianceSummaryPro
           </span>
         </label>
 
-        <button
-          type="button"
-          onClick={() => {
-            void handleGenerate();
-          }}
-          disabled={!hasConsented || isLoading}
-          className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[#0066cc] bg-[#0066cc] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#0052a3] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#0a84ff] dark:bg-[#0a84ff] dark:text-[#0b0c0e] dark:hover:bg-[#4da3ff]"
-        >
-          {isLoading ? "Generating Summary…" : "Generate Summary"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {isLoading && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="inline-flex items-center justify-center rounded-lg border border-[#d2d2d7] bg-[#f5f5f7] px-3 py-2 text-xs font-semibold text-[#1d1d1f] transition-colors hover:bg-[#e8e8ed] dark:border-[#2d313a] dark:bg-[#1c1f26] dark:text-[#f5f5f7]"
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              void handleGenerate();
+            }}
+            disabled={!hasConsented || isLoading}
+            className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[#0066cc] bg-[#0066cc] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#0052a3] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#0a84ff] dark:bg-[#0a84ff] dark:text-[#0b0c0e] dark:hover:bg-[#4da3ff]"
+          >
+            {isLoading ? "Generating Summary…" : "Generate Summary"}
+          </button>
+        </div>
       </div>
 
       {effectiveStatus.kind === "loading" && (

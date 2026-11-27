@@ -5,10 +5,7 @@ import { isValidDetectionCandidate } from "../detectors/constants";
 const LOW_RISK_MAX = 25;
 const MODERATE_RISK_MAX = 65;
 
-/**
- * Standard disclaimer explaining what the unredacted exposure score measures.
- */
-export const RISK_SCORE_EXPLANATION =
+const RISK_SCORE_EXPLANATION =
   "Measures the severity-weighted proportion of detected identifiers left completely unchanged. It is not a guarantee of anonymity; partial masking may still retain contextual clues.";
 
 function classifyRiskLevel(score: number): RiskLevel {

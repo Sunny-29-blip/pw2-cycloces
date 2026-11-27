@@ -172,6 +172,46 @@ describe("compliance validation and /api/summary", () => {
     );
     expect(corsRes.status).toBe(403);
     expect(corsRes.headers.get("access-control-allow-origin")).toBeNull();
+
+    const spoofedForwardedHostReq = new Request("https://cyloces.example/api/summary", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://evil.example",
+        host: "cyloces.example",
+        "x-forwarded-host": "evil.example",
+      },
+      body: JSON.stringify(VALID_BODY),
+    });
+    const spoofedForwardedRes = await handleSummaryRequest(spoofedForwardedHostReq, {
+      env: { GEMINI_API_KEY: "fake-test-key" },
+    });
+    expect(spoofedForwardedRes.status).toBe(403);
+
+    const secFetchCrossSiteRes = await handleSummaryRequest(
+      new Request("https://cyloces.example/api/summary", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "sec-fetch-site": "cross-site",
+        },
+        body: JSON.stringify(VALID_BODY),
+      }),
+      { env: { GEMINI_API_KEY: "fake-test-key" } },
+    );
+    expect(secFetchCrossSiteRes.status).toBe(403);
+
+    const strictMediaTypeRes = await handleSummaryRequest(
+      createJsonRequest(VALID_BODY, { contentType: "application/json-patch+json" }),
+      { env: { GEMINI_API_KEY: "fake-test-key" } },
+    );
+    expect(strictMediaTypeRes.status).toBe(415);
+
+    const malformedJsonRes = await handleSummaryRequest(
+      createJsonRequest("{invalid-json", { contentType: "application/json; charset=utf-8" }),
+      { env: { GEMINI_API_KEY: "fake-test-key" } },
+    );
+    expect(malformedJsonRes.status).toBe(400);
   });
 
   it("handles missing API key (503), SDK init failure (502), API failure (502), and timeout (504)", async () => {
@@ -232,6 +272,15 @@ describe("compliance validation and /api/summary", () => {
       }),
     });
     expect(timeoutRes.status).toBe(504);
+
+    const nonCooperativeHangRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
+      env: { GEMINI_API_KEY: "fake-test-key" },
+      timeoutMs: 10,
+      createGenerator: () => ({
+        generate: () => new Promise<string>(() => {}),
+      }),
+    });
+    expect(nonCooperativeHangRes.status).toBe(504);
   });
 
   it("catches unexpected internal handler exceptions and returns structured JSON 500", async () => {

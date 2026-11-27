@@ -74,7 +74,10 @@ export function DetectionInspector({
         </div>
 
         {totalPages > 1 && (
-          <div className="flex items-center gap-2 text-xs">
+          <nav
+            aria-label="Detection inspector pagination"
+            className="flex items-center gap-2 text-xs"
+          >
             <button
               type="button"
               onClick={() => goToPage(activePage - 1)}
@@ -83,7 +86,7 @@ export function DetectionInspector({
             >
               Previous Page
             </button>
-            <span className="text-[#515154] dark:text-[#a1a1aa]">
+            <span aria-live="polite" className="text-[#515154] dark:text-[#a1a1aa]">
               Page {activePage + 1} of {totalPages} ({detections.length.toLocaleString()} total)
             </span>
             <button
@@ -94,7 +97,7 @@ export function DetectionInspector({
             >
               Next Page
             </button>
-          </div>
+          </nav>
         )}
       </div>
 

@@ -31,10 +31,7 @@ function normalizeIpv4(value: string): string {
   return octets.map((octet) => String(Number(octet))).join(".");
 }
 
-/**
- * Normalizes a detected entity value for consistent pseudonymization within a session.
- */
-export function normalizeEntityValue(type: EntityType, value: string): string {
+function normalizeEntityValue(type: EntityType, value: string): string {
   switch (type) {
     case "EMAIL":
       return value.trim().toLowerCase();

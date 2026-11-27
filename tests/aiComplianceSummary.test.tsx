@@ -128,4 +128,35 @@ describe("AiComplianceSummary component", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Recovered summary after retry.")).toBeInTheDocument();
   });
+
+  it("cancels an in-flight summary request without showing an error banner", async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const abortErr = new Error("Aborted");
+            abortErr.name = "AbortError";
+            reject(abortErr);
+          });
+        }),
+    );
+
+    render(
+      <AiComplianceSummary
+        payload={SAMPLE_PAYLOAD}
+        fetchFn={fetchMock as unknown as typeof fetch}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate Summary" }));
+
+    const cancelButton = await screen.findByRole("button", { name: "Cancel" });
+    fireEvent.click(cancelButton);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

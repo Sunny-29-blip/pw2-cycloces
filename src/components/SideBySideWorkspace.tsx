@@ -159,7 +159,7 @@ export function SideBySideWorkspace({
             High-density view: showing detections {rangeStart}–{rangeEnd} of{" "}
             {detections.length.toLocaleString()}. Full downloads remain complete.
           </p>
-          <div className="flex items-center gap-2">
+          <nav aria-label="Workspace section pagination" className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => goToPage(activePage - 1)}
@@ -168,7 +168,7 @@ export function SideBySideWorkspace({
             >
               Previous Section
             </button>
-            <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+            <span aria-live="polite" className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
               Section {activePage + 1} / {totalPages}
             </span>
             <button
@@ -179,7 +179,7 @@ export function SideBySideWorkspace({
             >
               Next Section
             </button>
-          </div>
+          </nav>
         </div>
       )}
 
