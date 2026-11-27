@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildCompliancePrompt, DEFAULT_GEMINI_MODEL, handleSummaryRequest } from "../api/summary";
+import summaryEndpoint, {
+  buildCompliancePrompt,
+  DEFAULT_GEMINI_MODEL,
+  handleSummaryRequest,
+} from "../api/summary";
 import { requestComplianceSummary } from "../src/lib/complianceClient";
 import {
   buildComplianceRequestPayload,
@@ -144,12 +148,14 @@ describe("compliance validation and /api/summary", () => {
     );
     expect(chunkedTooLargeRes.status).toBe(413);
 
-    const getRes = await handleSummaryRequest(
+    const getRes = await summaryEndpoint.fetch(
       new Request("https://cyloces.example/api/summary", { method: "GET" }),
-      { env: { GEMINI_API_KEY: "fake-test-key" } },
     );
     expect(getRes.status).toBe(405);
     expect(getRes.headers.get("allow")).toBe("POST");
+    expect(getRes.headers.get("content-type")).toContain("application/json");
+    const getJson = (await getRes.json()) as { error: string; code: string };
+    expect(getJson.code).toBe("METHOD_NOT_ALLOWED");
 
     const textRes = await handleSummaryRequest(
       createJsonRequest(VALID_BODY, { contentType: "text/plain" }),
@@ -183,6 +189,17 @@ describe("compliance validation and /api/summary", () => {
     expect(sdkInitFailedRes.status).toBe(502);
     const sdkJson = (await sdkInitFailedRes.json()) as { code: string };
     expect(sdkJson.code).toBe("API_ERROR");
+
+    const dynamicImportFailedRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
+      env: { GEMINI_API_KEY: "fake-test-key" },
+      createGenerator: async () => {
+        throw new Error("Dynamic SDK import failure");
+      },
+    });
+    expect(dynamicImportFailedRes.status).toBe(502);
+    expect(dynamicImportFailedRes.headers.get("content-type")).toContain("application/json");
+    const dynamicJson = (await dynamicImportFailedRes.json()) as { code: string };
+    expect(dynamicJson.code).toBe("API_ERROR");
 
     const apiFailedRes = await handleSummaryRequest(createJsonRequest(VALID_BODY), {
       env: { GEMINI_API_KEY: "fake-test-key" },

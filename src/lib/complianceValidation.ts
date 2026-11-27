@@ -1,6 +1,6 @@
-import { ENTITY_PRIORITY_ORDER } from "./detectors/constants";
-import type { ComplianceSummaryRequest } from "../types/compliance";
-import type { Detection, EntityType } from "../types/detection";
+import { ENTITY_PRIORITY_ORDER } from "./detectors/constants.js";
+import type { ComplianceSummaryRequest } from "../types/compliance.js";
+import type { Detection, EntityType } from "../types/detection.js";
 
 /**
  * Maximum count allowed per entity type in aggregate compliance requests.

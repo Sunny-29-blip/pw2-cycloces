@@ -1,13 +1,12 @@
-import { GoogleGenAI } from "@google/genai";
 import {
   MAX_SUMMARY_REQUEST_BYTES,
   validateComplianceRequest,
-} from "../src/lib/complianceValidation";
+} from "../src/lib/complianceValidation.js";
 import type {
   ComplianceErrorResponse,
   ComplianceSummaryRequest,
   ComplianceSummaryResponse,
-} from "../src/types/compliance";
+} from "../src/types/compliance.js";
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const SUMMARY_TIMEOUT_MS = 12_000;
@@ -33,7 +32,7 @@ export interface SummaryGenerator {
 
 export interface SummaryHandlerOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
-  readonly createGenerator?: (apiKey: string) => SummaryGenerator;
+  readonly createGenerator?: (apiKey: string) => SummaryGenerator | Promise<SummaryGenerator>;
   readonly timeoutMs?: number;
 }
 
@@ -134,7 +133,8 @@ export function buildCompliancePrompt(payload: ComplianceSummaryRequest): string
   ].join("\n");
 }
 
-function createSdkGenerator(apiKey: string): SummaryGenerator {
+async function createSdkGenerator(apiKey: string): Promise<SummaryGenerator> {
+  const { GoogleGenAI } = await import("@google/genai");
   const ai = new GoogleGenAI({ apiKey });
 
   return {
@@ -219,7 +219,7 @@ async function executeSummaryRequest(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const generator = (options.createGenerator ?? createSdkGenerator)(apiKey);
+    const generator = await (options.createGenerator ?? createSdkGenerator)(apiKey);
     const rawSummary = await generator.generate({
       model,
       prompt: buildCompliancePrompt(validation.data),
